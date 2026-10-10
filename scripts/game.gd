@@ -43,6 +43,8 @@ enum InputMode { NONE, HAND, AIM }
 const PADDLE_X := 1.6
 const PADDLE_Y := 1.0
 const AI_THINK_TIME := 0.55
+## How often an online match looks for the other player's shot while waiting.
+const REMOTE_POLL_TIME := 0.05
 const POINT_HOLD_TIME := 1.1
 ## How long the VS banner holds before the first point.
 const VS_BANNER_TIME := 1.6
@@ -173,6 +175,16 @@ var _time := 0.0
 ## True while the AI is taking its think time.
 var _thinking := false
 var _think_label: Label3D
+## The local player's seat in the MatchState: 0 unless this is an online
+## guest. The presenter always draws the local player at the bottom as
+## player 0, so with a seat of 1 every player index, score pair and zone that
+## crosses between the state and the presentation is mirrored: seats swap and
+## a zone becomes the same zone on the other half with the lanes reversed.
+var local_seat := 0
+## The room this match is played through; null against the AI.
+var online: OnlineRoom
+## The other peer's shots, applied one at a time when it is their turn.
+var _remote_actions: Array[Dictionary] = []
 
 
 func _ready() -> void:
@@ -223,6 +235,9 @@ func start(config: Dictionary) -> void:
 		int(config.get("points_to_win", MatchState.DEFAULT_POINTS_TO_WIN)))
 	points_to_win = state.points_to_win
 	ai_params = config.get("ai", {})
+	local_seat = int(config.get("local_seat", 0))
+	online = config.get("online", null)
+	_remote_actions.clear()
 	opponent_name = String(config.get("opponent_name", "Them"))
 	opponent_id = String(config.get("opponent_id", ""))
 	short_name = short_name_of(opponent_name)
@@ -236,6 +251,9 @@ func start(config: Dictionary) -> void:
 	_emblem.visible = _emblem.texture != null
 	stage_label.text = "STAGE %d of %d" % [int(config.get("stage", 0)) + 1, int(config.get("stages", RunState.STAGES))]
 	UiKit.set_pips(hearts_row, int(config.get("hearts", RunState.HEARTS)))
+	# A run's hearts and stage mean nothing in a one-off online match.
+	hearts_row.visible = online == null
+	stage_label.visible = online == null
 	hud_root.visible = true
 	_shown_stamina = [MatchState.STAMINA_MAX, MatchState.STAMINA_MAX]
 	_refresh_score([0, 0])
@@ -656,7 +674,7 @@ func _set_paddle_color(color: Variant) -> void:
 # --- event playback ---------------------------------------------------------
 
 func _enqueue(events: Array[Dictionary]) -> void:
-	_queue.append_array(events)
+	_queue.append_array(_view_events(events))
 	if not _pumping:
 		_pump()
 
@@ -694,7 +712,7 @@ func _present_point_start(e: Dictionary) -> void:
 	var server := int(e["server"])
 	grid.clear_all()
 	for p in 2:
-		_slide_paddle(p, state.players[p].col, true)
+		_slide_paddle(p, _col_view(_player(p).col), true)
 	ball.stop()
 	ball.global_position = _hit_point(server) - Vector3(MatchState.side_of(server) * 0.1, 0.0, 0.0)
 	ball.spin_rate = 1.0
@@ -709,6 +727,19 @@ func _present_point_start(e: Dictionary) -> void:
 func _remote_turn() -> void:
 	var gen := _generation
 	_set_thinking(true)
+	if online != null:
+		# The other player is picking; their shot arrives through the room.
+		while _remote_actions.is_empty():
+			if online.peer_gone:
+				# They left with the match unfinished: nothing more will come.
+				online.end("Your friend left the room.")
+				return
+			await get_tree().create_timer(REMOTE_POLL_TIME, false).timeout
+			if gen != _generation:
+				return
+		_set_thinking(false)
+		_enqueue(state.apply(_remote_actions.pop_front()))
+		return
 	await get_tree().create_timer(AI_THINK_TIME, false).timeout
 	if gen != _generation:
 		return
@@ -822,7 +853,7 @@ func _present_match_over(e: Dictionary) -> void:
 	var winner := int(e["winner"])
 	var won := winner == LOCAL
 	var score: Array = e["score"]
-	_log("Match over. You %s %d to %d." % ["win" if won else "lose", state.players[0].score, state.players[1].score])
+	_log("Match over. You %s %d to %d." % ["win" if won else "lose", _player(LOCAL).score, _player(REMOTE).score])
 	_show_callout("YOU WIN" if won else "YOU LOSE", won, false)
 	hand_ui.clear()
 	incoming_label.text = ""
@@ -845,13 +876,13 @@ func _open_input() -> void:
 	selected_index = -1
 	input_mode = InputMode.HAND
 	grid.clear_states(1)
-	var their_col := state.players[REMOTE].col
+	var their_col := _col_view(_player(REMOTE).col)
 	grid.set_covered(1, [their_col - 1, their_col, their_col + 1])
-	var where := "" if state.incoming_zone == null else " to your %s" % state.incoming_zone.label()
+	var where := "" if state.incoming_zone == null else " to your %s" % _zone_view(state.incoming_zone).label()
 	var heavy := ", heavy" if state.incoming_heavy else ""
 	incoming_label.text = "%s%s%s" % [BallType.label(state.incoming_type), where, heavy]
 	hint_label.text = BallType.hint(state.incoming_type) + "  Pick a card, then aim at a zone on their half."
-	hand_ui.show_hand(state.players[LOCAL].hand, state.incoming_type, state.players[LOCAL].stamina)
+	hand_ui.show_hand(_player(LOCAL).hand, state.incoming_type, _player(LOCAL).stamina)
 	hand_ui.set_enabled(true)
 	hand_ui.focus_first()
 
@@ -864,7 +895,7 @@ func _on_card_chosen(index: int) -> void:
 ## Chooses card `index` and switches to aiming: focus leaves the hand so the
 ## arrows and the d-pad drive the zone cursor instead.
 func _select_card(index: int) -> void:
-	if not input_open or index < 0 or index >= state.players[LOCAL].hand.size():
+	if not input_open or index < 0 or index >= _player(LOCAL).hand.size():
 		return
 	selected_index = index
 	hand_ui.set_selected(index)
@@ -890,7 +921,7 @@ func _unselect_card() -> void:
 ## Q/E and the shoulder buttons: the previous or next card, from the chosen
 ## one while aiming or from the focused one while picking.
 func _cycle_card(step: int) -> void:
-	var n := state.players[LOCAL].hand.size()
+	var n := _player(LOCAL).hand.size()
 	if n == 0:
 		return
 	var from := selected_index
@@ -925,7 +956,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	var card := InputSetup.card_index(event)
 	if card >= 0:
-		if card < state.players[LOCAL].hand.size():
+		if card < _player(LOCAL).hand.size():
 			_select_card(card)
 			get_viewport().set_input_as_handled()
 		return
@@ -1008,12 +1039,12 @@ func _update_hover_hint() -> void:
 	if selected_index < 0:
 		hint_label.text = BallType.hint(state.incoming_type) + "  Pick a card first."
 		return
-	var card: Card = state.players[LOCAL].hand[selected_index]
-	var tired := " (tired)" if card.cost > state.players[LOCAL].stamina else ""
+	var card: Card = _player(LOCAL).hand[selected_index]
+	var tired := " (tired)" if card.cost > _player(LOCAL).stamina else ""
 	if hover_zone == null:
 		hint_label.text = "%s selected%s. Dotted zones are easier to miss, darker ones are where they stand." % [card.title, tired]
 		return
-	var odds := state.odds(LOCAL, selected_index, hover_zone)
+	var odds := state.odds(_seat(LOCAL), selected_index, _zone_view(hover_zone))
 	hint_label.text = "%s to the %s: lands %d%%%s, wins %d%% if it does." % [
 		card.title, hover_zone.label(), roundi(odds["land"] * 100.0), tired, roundi(odds["win"] * 100.0)]
 
@@ -1039,14 +1070,82 @@ func _submit(action: Dictionary) -> void:
 	# nothing to add until the next ball is on its way.
 	hint_label.text = ""
 	incoming_label.text = ""
-	_enqueue(state.apply(action))
+	var canonical := _action_canonical(action)
+	if online != null:
+		online.send_action(canonical)
+	_enqueue(state.apply(canonical))
+
+
+## A shot from the other peer, in the state's own seats and zones. Kept until
+## the playback reaches their turn, so the table never runs ahead of itself.
+func receive_remote_action(action: Dictionary) -> void:
+	_remote_actions.append(action)
+
+
+## True when this online match can reach its end without hearing from the
+## other peer again: the state is over, or their last shots are still queued.
+func online_can_finish() -> bool:
+	if state == null or idle:
+		return false
+	return state.phase == MatchState.Phase.MATCH_OVER or not _remote_actions.is_empty()
+
+
+# --- seats: the state's view and the local player's ---------------------------
+
+## The state's index of the player this presenter shows as `view_player`.
+func _seat(view_player: int) -> int:
+	return view_player if local_seat == 0 else 1 - view_player
+
+
+func _player(view_player: int) -> MatchState.PlayerState:
+	return state.players[_seat(view_player)]
+
+
+## A lane as the local player sees it: reversed from the far end of the table.
+func _col_view(col: int) -> int:
+	return col if local_seat == 0 else ZoneLayout.COL_FRACTIONS.size() - 1 - col
+
+
+## The zone `zone` is, seen from the local player's end. Its own inverse.
+func _zone_view(zone: Zone) -> Zone:
+	if zone == null or local_seat == 0:
+		return zone
+	return layout.find(-zone.side, zone.row, _col_view(zone.col))
+
+
+## A local action, built in the local view, as the state (and the other peer) wants it.
+func _action_canonical(action: Dictionary) -> Dictionary:
+	return {"type": "shot", "player": _seat(int(action["player"])), "card": int(action["card"]),
+		"row": int(action["row"]), "col": _col_view(int(action["col"]))}
+
+
+## Events as the local player sees them: players, score pairs, stamina pairs,
+## stats pairs and zones mirrored for a guest seat, untouched for the host.
+func _view_events(events: Array[Dictionary]) -> Array[Dictionary]:
+	if local_seat == 0:
+		return events
+	var out: Array[Dictionary] = []
+	for e in events:
+		var v := e.duplicate()
+		for key in ["player", "server", "winner"]:
+			if v.has(key):
+				v[key] = _seat(int(v[key]))
+		for key in ["score", "stamina", "stats"]:
+			if v.has(key):
+				var pair: Array = v[key]
+				v[key] = [pair[1], pair[0]]
+		for key in ["target", "incoming_zone"]:
+			if v.has(key):
+				v[key] = _zone_view(v[key])
+		out.append(v)
+	return out
 
 
 # --- small presentation helpers --------------------------------------------
 
 func _hit_point(player: int) -> Vector3:
 	var side := MatchState.side_of(player)
-	return Vector3(side * (PADDLE_X - 0.15), PADDLE_Y, layout.lane_z(state.players[player].col))
+	return Vector3(side * (PADDLE_X - 0.15), PADDLE_Y, layout.lane_z(_col_view(_player(player).col)))
 
 
 ## Moves a paddle along the table to lane `col`. Only x and z: the height is

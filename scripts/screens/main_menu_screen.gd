@@ -1,7 +1,7 @@
 ## The first screen: the orbiting hall shows through a light tint, the
 ## wordmark sits on top with a ball for a full stop, and the buttons below
-## it: New Run, Continue, Settings, Quit. Continue only appears when the
-## Director found a save to resume.
+## it: New Run, Continue, Play Online, Settings, Quit. Continue only appears
+## when the Director found a save to resume.
 class_name MainMenuScreen
 extends UiScreen
 
@@ -36,6 +36,7 @@ func setup(p_args: Dictionary) -> void:
 	_new_run = _menu_button(box, "New Run", "new_run")
 	if bool(args.get("has_save", false)):
 		_menu_button(box, "Continue", "continue")
+	_menu_button(box, "Play Online", "online")
 	_menu_button(box, "Settings", "settings")
 	_menu_button(box, "Quit", "quit")
 	add_child(UiKit.center(box))

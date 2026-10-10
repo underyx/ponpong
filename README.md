@@ -139,9 +139,43 @@ finishing it deletes the file. On Windows `user://` is
 `%APPDATA%\Godot\app_userdata\ponpong\`; on Linux it is
 `~/.local/share/godot/app_userdata/ponpong/`.
 
+## Play online
+
+**Play Online** on the main menu opens the lobby. One player hosts and reads
+the four-letter room code out (or sends the share link the lobby shows in a
+browser); the other types it and joins. Both get the starter deck, the host
+draws the seed, and from then on each browser applies both players' shots
+to its own copy of the pure `MatchState`, which is why the two tables can
+never disagree (`tests/determinism.gd` guards that contract). The guest sees
+the same match from the other end: the presenter mirrors seats and lanes.
+
+There is no server of ours. The two peers meet on a public MQTT broker over
+WebSockets (`OnlineRoom.DEFAULT_RELAY`, `wss://broker.emqx.io:8084/mqtt`)
+through `scripts/online/mqtt_client.gd`, a 200-line MQTT 3.1.1 client that
+only connects, subscribes, publishes and pings. `?relay=wss://…` on the page
+(or `--relay=…` after `--` on the command line) points both players at
+another broker. No reconnection, no matchmaking: a dropped connection ends
+the match, and the lobby says why. Esc pauses; the pause menu's last button
+leaves the match.
+
+## Build for the web
+
+The **Web** preset exports single-threaded (no SharedArrayBuffer, so no
+COOP/COEP headers are needed and any static host will do) with the
+Compatibility renderer, which `rendering_method.web` in `project.godot`
+selects while the desktop build keeps Forward+. `.github/workflows/web.yml`
+exports it with headless Godot 4.6 on every push to `main` and deploys it to
+GitHub Pages (`actions/configure-pages` with `enablement: true` switches
+Pages on; the repository has to be public on a free plan). By hand:
+
+```sh
+godot --headless --path . --export-release "Web" export/web/index.html
+python3 -m http.server 8000 --directory export/web   # then open http://localhost:8000/
+```
+
 ## Build for Windows
 
-`export_presets.cfg` carries one preset, **Windows Desktop**: x86_64, the
+`export_presets.cfg` carries the **Windows Desktop** preset: x86_64, the
 `.pck` embedded in the exe, no code signing, no resource editing (so the exe
 wears Godot's icon and no rcedit is needed), `docs/`, `tests/` and `tools/`
 left out. Export templates are needed once: **Editor > Manage Export
@@ -174,6 +208,7 @@ $G --headless --path . -s tests/balance.gd -- --runs 40    # starter vs every op
 $G --headless --path . -s tests/screens.gd                 # every screen and CardView from synthetic args
 $G --headless --fixed-fps 60 --path . -s tests/autoplay.gd # whole runs through the menus, pauses, aims
 sh tools/check_rules_pure.sh                               # rules files never touch global RNG, nodes or time
+AMQTT=/path/to/amqtt sh tools/check_online.sh $G           # two headless peers play one online match through a local broker
 $G --headless --path . -s tools/card_table.gd              # the card table below, as Markdown
 LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1280x720x24" \
   $G --path . --rendering-driver opengl3 -s tests/screenshot.gd -- /abs/out   # PNGs of every screen
@@ -187,6 +222,13 @@ On Windows the same commands run in PowerShell with the console build, for
 example `& 'C:\Godot\Godot_v4.7.2-stable_win64_console.exe' --headless --path . -s tests/determinism.gd`;
 `tests/screenshot.gd` runs there directly, without `xvfb-run` or
 `LIBGL_ALWAYS_SOFTWARE`.
+
+`tools/check_online.sh` needs [amqtt](https://pypi.org/project/amqtt/)
+(`pip install amqtt`): it starts a broker with a WebSocket listener from
+`tools/online_broker.yaml`, runs `tests/online_peer.gd` twice (host and
+guest, random legal shots from each peer's own RNG) and checks both print the
+same final score. It runs in real time, not under `--fixed-fps`: a headless
+`WebSocketPeer` drops its connection under a forced frame rate.
 
 `tests/balance.gd` prints a win-rate table for the starter deck against every
 opponent (with each one's target band), and per-card play, tired, land, winner
@@ -202,8 +244,9 @@ windows, the opponent emblems and every card face as `CardView` draws it.
 | --- | --- |
 | `scenes/main.tscn` | The root: the Director, one Match instance, the Screens layer and the Sfx node. |
 | `scenes/match.tscn` | The match: the hall (floor, barriers, lamp), table, net, paddles, ball, trail, impact particles, camera, vignette, the hand, VisualFx. The rest of the HUD is built in `game.gd`. |
-| `scripts/director.gd` | The run loop: owns the RunState, starts matches, shows screens, pauses, saves and loads. |
-| `scripts/game.gd` | The match presenter (`MatchScene`): feeds actions to the state, plays back events, emits `fx`. |
+| `scripts/director.gd` | The run loop: owns the RunState, starts matches, shows screens, pauses, saves and loads; also opens and ends online rooms. |
+| `scripts/game.gd` | The match presenter (`MatchScene`): feeds actions to the state, plays back events, emits `fx`; mirrors seats and zones for an online guest. |
+| `scripts/online/` | `mqtt_client.gd` (MQTT 3.1.1 over `WebSocketPeer`) and `online_room.gd` (room code, handshake, action relay). |
 | `scripts/run_state.gd` | Pure, seeded, serialisable run: opponents, hearts, rewards, trims. |
 | `scripts/opponent_library.gd` | The nine opponents: decks, AI personalities, paddle colours. |
 | `scripts/match_state.gd` | Pure, seeded, serialisable match: decks, hands, stamina, points. The thing to run on both peers. |
@@ -218,7 +261,7 @@ windows, the opponent emblems and every card face as `CardView` draws it.
 | `scripts/hand_ui.gd` | The hand: a focusable strip of CardViews. |
 | `scripts/input_setup.gd` | Registers the keyboard, mouse and gamepad actions at boot. |
 | `scripts/settings.gd` | Master volume, fullscreen and screen shake as statics; reads and writes `user://settings.cfg` and applies them to the engine. |
-| `scripts/screens/` | Main menu, pause, settings, match end, reward, deck and run end, all code-built. |
+| `scripts/screens/` | Main menu, pause, settings, match end, reward, deck, run end and the online lobby, all code-built. |
 | `scripts/ui/` | `Palette` (the colours and the four font variations), `UiKit` (widget builders: titles, plates, chips, pips, icons), `UiScreen` (screen base), `CardView` (one card face). |
 | `theme/ponpong.tres`, `theme/fonts/` | The project theme (`gui/theme/custom`): buttons, sliders, panels and the default font, built on the four `FontVariation`s. |
 | `assets/fonts/` | Lilita One (display) and Rubik (body, variable weight), with their OFL licences. |
