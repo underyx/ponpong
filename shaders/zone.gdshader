@@ -7,6 +7,9 @@ uniform vec4 line_color : source_color = vec4(0.96, 0.94, 0.88, 1.0);
 uniform vec4 highlight_color : source_color = vec4(1.0, 0.8, 0.3, 1.0);
 uniform float highlight : hint_range(0.0, 1.0) = 0.0;
 uniform float dim : hint_range(0.0, 1.0) = 0.0;
+// A white flash over everything else, for the moment the ball lands here.
+// Separate from highlight so the zone's state shows through as it fades.
+uniform float flash : hint_range(0.0, 1.0) = 0.0;
 // 0..1, how easy this zone is to miss. Drives the halftone dot size.
 uniform float risk : hint_range(0.0, 1.0) = 0.0;
 // World-space size of the quad so borders and dots stay the same width everywhere.
@@ -27,5 +30,6 @@ void fragment() {
 	base = mix(base, base * 0.6, dim);
 	base = mix(base, highlight_color.rgb, highlight * 0.7);
 	vec3 border = mix(line_color.rgb, highlight_color.rgb, highlight);
-	ALBEDO = mix(base, border, line);
+	vec3 shaded = mix(base, border, line);
+	ALBEDO = mix(shaded, vec3(1.0), flash * 0.85);
 }

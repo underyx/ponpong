@@ -2,6 +2,20 @@
 class_name Card
 extends Resource
 
+enum Rarity { COMMON, UNCOMMON, RARE }
+
+## Every keyword a card may carry; "" is none. One keyword per card, no stacking.
+const KEYWORDS := ["", "rest", "sap", "exhaust", "steady", "reach", "heavy"]
+## The one line of card text each keyword shows.
+const KEYWORD_HELP := {
+	"rest": "Rest: +2 stamina.",
+	"sap": "Sap: they lose 2 stamina.",
+	"exhaust": "Exhaust: once per match.",
+	"steady": "Steady: half the zone risk.",
+	"reach": "Reach: awkward balls do not matter.",
+	"heavy": "Heavy: their reply is harder.",
+}
+
 ## Stable identifier used when a card is sent over the wire or saved.
 @export var id: String = "shot"
 @export var title: String = "Shot"
@@ -22,11 +36,17 @@ extends Resource
 ## Shape of the ball flight when played: apex height and duration multiplier.
 @export var arc_height: float = 0.35
 @export var speed: float = 1.0
+## Stamina paid to play it. Over budget is still legal, but the shot is tired.
+@export_range(0, 3) var cost: int = 1
+@export var rarity: int = Rarity.COMMON
+## One of KEYWORDS; "" for none.
+@export var keyword: String = ""
 
 
 static func make(p_id: String, p_title: String, p_flavor: String, p_power: float, p_control: float,
 		p_produces: int, p_strong: Array[int], p_weak: Array[int], p_color: Color,
-		p_arc: float, p_speed: float, p_prefers_row: int = -1) -> Card:
+		p_arc: float, p_speed: float, p_prefers_row: int = -1,
+		p_cost: int = 1, p_rarity: int = Rarity.COMMON, p_keyword: String = "") -> Card:
 	var c := Card.new()
 	c.id = p_id
 	c.title = p_title
@@ -40,6 +60,9 @@ static func make(p_id: String, p_title: String, p_flavor: String, p_power: float
 	c.arc_height = p_arc
 	c.speed = p_speed
 	c.prefers_row = p_prefers_row
+	c.cost = p_cost
+	c.rarity = p_rarity
+	c.keyword = p_keyword
 	return c
 
 
@@ -53,3 +76,8 @@ func is_weak_vs(incoming: int) -> bool:
 
 func likes_row(row: int) -> bool:
 	return prefers_row == row
+
+
+## The keyword's card text, or "" when the card has none.
+func keyword_text() -> String:
+	return KEYWORD_HELP.get(keyword, "")
