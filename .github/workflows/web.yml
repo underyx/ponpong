@@ -1,0 +1,55 @@
+name: Web build
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Godot 4.6 and the web export templates
+        run: |
+          set -e
+          mkdir -p ~/godot ~/.local/share/godot/export_templates/4.6.stable
+          curl -sSL -o ~/godot/godot.zip https://github.com/godotengine/godot-builds/releases/download/4.6-stable/Godot_v4.6-stable_linux.x86_64.zip &
+          curl -sSL -o ~/godot/templates.tpz https://github.com/godotengine/godot-builds/releases/download/4.6-stable/Godot_v4.6-stable_export_templates.tpz &
+          wait
+          unzip -q ~/godot/godot.zip -d ~/godot
+          unzip -q -j ~/godot/templates.tpz 'templates/web_nothreads_*' 'templates/version.txt' -d ~/.local/share/godot/export_templates/4.6.stable/
+
+      - name: Export the Web preset
+        run: |
+          set -e
+          G=~/godot/Godot_v4.6-stable_linux.x86_64
+          $G --headless --path . --import || true
+          mkdir -p export/web
+          $G --headless --path . --export-release Web export/web/index.html
+          test -f export/web/index.wasm
+          test -f export/web/index.pck
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: export/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
