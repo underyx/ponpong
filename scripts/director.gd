@@ -27,6 +27,8 @@ const PICK_HOLD := 0.3
 const SELF_VOICED := ["reward/pick"]
 
 var run: RunState
+## The room of the online match in progress or being set up; null otherwise.
+var online: OnlineRoom
 var match_scene: MatchScene
 var screen: UiScreen
 ## Name of the screen that is up or on its way; "" during a match.
@@ -83,7 +85,12 @@ func _ready() -> void:
 		match_scene.ball.bounced.connect(sfx.on_bounced)
 		match_scene.ball.netted.connect(sfx.on_netted)
 	match_scene.set_idle(true)
-	show_screen("main_menu", _menu_args())
+	# A share link (?room=ABCD on the web) goes straight to that room.
+	var room := OnlineRoom.room_from_environment()
+	if room.is_empty():
+		show_screen("main_menu", _menu_args())
+	else:
+		_start_online(false, room)
 
 
 func _process(_delta: float) -> void:
@@ -101,7 +108,7 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		toggle_fullscreen()
 		return
-	if run != null and screen == null and not transitioning and event.is_action_pressed("pause"):
+	if (run != null or online != null) and screen == null and not transitioning and event.is_action_pressed("pause"):
 		get_viewport().set_input_as_handled()
 		toggle_pause()
 
@@ -164,6 +171,12 @@ func _route() -> void:
 
 
 func _on_match_finished(winner: int, score: Array, longest_rally: int, stats: Array) -> void:
+	if online != null:
+		# The signal's values are from the local seat's view: 0 is this player.
+		_end_online()
+		match_scene.set_idle(true)
+		show_screen("online", {"mode": "result", "won": winner == 0, "score": score.duplicate()})
+		return
 	if run == null:
 		return
 	run.apply({"type": "match_result", "winner": winner, "score": score, "longest_rally": longest_rally,
@@ -194,8 +207,20 @@ func _on_screen_done(action: String, data: Dictionary) -> void:
 				_route()
 			else:
 				show_screen("main_menu", _menu_args())
+		"main_menu/online":
+			show_screen("online", {"mode": "menu"})
 		"main_menu/settings":
 			show_screen("settings", {"return": "main_menu"})
+		"online/host":
+			_start_online(true, "")
+		"online/join":
+			_start_online(false, String(data.get("code", "")))
+		"online/cancel":
+			_end_online()
+			show_screen("online", {"mode": "menu"})
+		"online/back":
+			_end_online()
+			show_screen("main_menu", _menu_args())
 		"main_menu/quit":
 			get_tree().quit()
 		"pause/resume":
@@ -206,7 +231,10 @@ func _on_screen_done(action: String, data: Dictionary) -> void:
 		"pause/settings":
 			show_screen("settings", {"return": "pause"})
 		"pause/abandon":
-			abandon_run()
+			if online != null:
+				_leave_online_match()
+			else:
+				abandon_run()
 		"match_end/continue":
 			_route()
 		"reward/pick":
@@ -262,6 +290,99 @@ func _on_screen_done(action: String, data: Dictionary) -> void:
 				show_screen("main_menu", _menu_args())
 		_:
 			push_warning("Director: no route for %s" % key)
+
+
+# --- online ------------------------------------------------------------------
+
+## Opens a room (as host with a fresh code, or as the guest of `code`) and
+## shows the lobby while the relay does its work.
+func _start_online(as_host: bool, code: String) -> void:
+	_end_online()
+	online = OnlineRoom.new()
+	online.name = "OnlineRoom"
+	online.relay_url = OnlineRoom.relay_from_environment()
+	online.status_changed.connect(_on_online_status)
+	online.started.connect(_on_online_started)
+	online.action_received.connect(_on_online_action)
+	online.ended.connect(_on_online_ended)
+	online.peer_left.connect(_on_online_peer_left)
+	add_child(online)
+	if as_host:
+		online.host(code)
+	else:
+		online.join(code)
+	# The tab reads the code too, so a host can find it again.
+	DisplayServer.window_set_title("ponpong · room %s" % online.code)
+	show_screen("online", {"mode": "waiting", "host": as_host, "code": online.code,
+		"link": OnlineRoom.share_link(online.code)})
+
+
+func _on_online_status(text: String) -> void:
+	# The lobby may still be on its way in, in which case _pending holds it.
+	for s in [screen, _pending]:
+		if s is OnlineScreen and is_instance_valid(s):
+			(s as OnlineScreen).set_status(text)
+
+
+## Both peers have the seed and the deck: the match starts, outside any run.
+func _on_online_started(cfg: Dictionary) -> void:
+	run = null
+	close_screen()
+	get_tree().paused = false
+	match_scene.set_idle(false)
+	var deck: Array[Card] = CardLibrary.from_ids(cfg["deck_ids"])
+	match_scene.start({
+		"seed": int(cfg["seed"]),
+		"decks": [deck, deck.duplicate()],
+		"points_to_win": int(cfg["points_to_win"]),
+		"opponent_name": "Your friend",
+		"opponent_id": "",
+		"blurb": "room %s" % online.code,
+		"paddle_color": null,
+		"boss": false,
+		"hearts": 0,
+		"stage": 0,
+		"stages": 1,
+		"online": online,
+		"local_seat": int(cfg["seat"]),
+	})
+
+
+func _on_online_action(action: Dictionary) -> void:
+	match_scene.receive_remote_action(action)
+
+
+## The other player left. Their playback may just have finished before ours:
+## with every shot in, the match ends here on its own and shows the result.
+func _on_online_peer_left() -> void:
+	if online == null or match_scene.online_can_finish():
+		return
+	online.end("Your friend left the room.")
+
+
+## The room closed itself (the relay dropped, the friend left, nobody came).
+func _on_online_ended(reason: String) -> void:
+	_end_online()
+	get_tree().paused = false
+	match_scene.set_idle(true)
+	show_screen("online", {"mode": "menu", "status": reason})
+
+
+func _leave_online_match() -> void:
+	_end_online()
+	get_tree().paused = false
+	match_scene.set_idle(true)
+	show_screen("online", {"mode": "menu", "status": "You left the match."})
+
+
+## Says goodbye on the room, if any, and lets it close its socket and free itself.
+func _end_online() -> void:
+	if online == null:
+		return
+	var room := online
+	online = null
+	room.leave()
+	DisplayServer.window_set_title(String(ProjectSettings.get_setting("application/config/name", "ponpong")))
 
 
 # --- screens -----------------------------------------------------------------
@@ -333,7 +454,7 @@ func toggle_pause() -> void:
 		tree.paused = true
 		# The pause key has no button to click: it sounds like Esc.
 		Sfx.play("ui_back")
-		show_screen("pause")
+		show_screen("pause", {"online": online != null})
 
 
 func abandon_run() -> void:
@@ -360,6 +481,8 @@ func _make_screen(name: String) -> UiScreen:
 			return RunEndScreen.new()
 		"settings":
 			return SettingsScreen.new()
+		"online":
+			return OnlineScreen.new()
 	return null
 
 

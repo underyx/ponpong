@@ -7,13 +7,17 @@ extends UiScreen
 const TITLE_SIZE := 56
 const ABANDON_TEXT := "Abandon Run"
 const CONFIRM_TEXT := "Really abandon?"
+## The last button over an online match: no run to abandon, just the table.
+const LEAVE_TEXT := "Leave Match"
+const LEAVE_CONFIRM_TEXT := "Really leave?"
 
 var _resume: Button
 var _abandon: Button
 var _armed := false
 
 
-## args: {}
+## args: {"online": bool}  over an online match there is no deck to view and
+## "abandon" leaves the match instead of a run.
 func setup(p_args: Dictionary) -> void:
 	super(p_args)
 	back_action = "resume"
@@ -23,10 +27,11 @@ func setup(p_args: Dictionary) -> void:
 	box.add_child(UiKit.rule())
 	box.add_child(UiKit.spacer(6))
 	_resume = _menu_button(box, "Resume", "resume")
-	_menu_button(box, "Deck", "deck")
+	if not _online():
+		_menu_button(box, "Deck", "deck")
 	_menu_button(box, "Settings", "settings")
 	box.add_child(UiKit.spacer(2))
-	_abandon = UiKit.button(ABANDON_TEXT)
+	_abandon = UiKit.button(LEAVE_TEXT if _online() else ABANDON_TEXT)
 	_abandon.size_flags_horizontal = SIZE_SHRINK_CENTER
 	_abandon.pressed.connect(_on_abandon_pressed)
 	box.add_child(_abandon)
@@ -44,7 +49,7 @@ func first_focus() -> Control:
 func _on_abandon_pressed() -> void:
 	if not _armed:
 		_armed = true
-		_abandon.text = CONFIRM_TEXT
+		_abandon.text = LEAVE_CONFIRM_TEXT if _online() else CONFIRM_TEXT
 		_abandon.add_theme_stylebox_override("normal", UiKit.button_style(Palette.PINK, Palette.INK))
 		_abandon.add_theme_stylebox_override("hover", UiKit.button_style(Palette.PINK.lightened(0.15), Palette.INK))
 		_abandon.add_theme_color_override("font_color", Palette.PAPER)
@@ -62,3 +67,7 @@ func _menu_button(box: VBoxContainer, text: String, action: String) -> Button:
 	_bind(b, action)
 	box.add_child(b)
 	return b
+
+
+func _online() -> bool:
+	return bool(args.get("online", false))

@@ -1,0 +1,17 @@
+# A local MQTT broker for tools/check_online.sh: amqtt (pip install amqtt)
+# with a WebSocket listener, which is what the game's relay client speaks.
+listeners:
+  default:
+    type: tcp
+    bind: 127.0.0.1:1883
+  ws:
+    type: ws
+    bind: 127.0.0.1:1884
+    max_connections: 20
+sys_interval: 0
+auth:
+  allow-anonymous: true
+  plugins:
+    - auth_anonymous
+topic-check:
+  enabled: false

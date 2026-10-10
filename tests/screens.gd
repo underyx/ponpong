@@ -38,6 +38,7 @@ func _process(_delta: float) -> bool:
 	_test_hand_ui()
 	_test_main_menu()
 	_test_pause()
+	_test_online()
 	_test_match_end()
 	_test_reward()
 	_test_deck()
@@ -290,16 +291,17 @@ func _test_main_menu() -> void:
 			continue
 		_check(s.back_action == "", "%s: back_action is '%s'" % [label, s.back_action])
 		# press() carries every action of the design's row.
-		for action in ["new_run", "continue", "settings", "quit"]:
+		for action in ["new_run", "continue", "online", "settings", "quit"]:
 			_expect(s, action, {}, label)
 		_check(_click(_button(s, "New Run", label)) == [["new_run", {}]], "%s: New Run button" % label)
 		var continues := _buttons_with_text(s, "Continue")
 		_check(continues.size() == (1 if has_save else 0), "%s: %d Continue buttons" % [label, continues.size()])
 		if continues.size() == 1:
 			_check(_click(continues[0]) == [["continue", {}]], "%s: Continue button" % label)
+		_check(_click(_button(s, "Play Online", label)) == [["online", {}]], "%s: Play Online button" % label)
 		_check(_click(_button(s, "Settings", label)) == [["settings", {}]], "%s: Settings button" % label)
 		_check(_click(_button(s, "Quit", label)) == [["quit", {}]], "%s: Quit button" % label)
-		var want: Array[String] = ["New Run", "Settings", "Quit"]
+		var want: Array[String] = ["New Run", "Play Online", "Settings", "Quit"]
 		if has_save:
 			want.insert(1, "Continue")
 		_check(_button_texts(s) == want, "%s: buttons read %s" % [label, _button_texts(s)])
@@ -325,7 +327,57 @@ func _test_pause() -> void:
 			_check(_click(abandon).is_empty() and abandon.text == PauseScreen.CONFIRM_TEXT, "pause: first Abandon only arms")
 			_check(_click(abandon) == [["abandon", {}]], "pause: second Abandon fires")
 		_close(s)
+	# Over an online match: no deck, and the last button leaves the match.
+	var o := _open("pause_screen.gd", {"online": true}, "pause(online)")
+	if o != null:
+		var want_online: Array[String] = ["Resume", "Settings", PauseScreen.LEAVE_TEXT]
+		_check(_button_texts(o) == want_online, "pause(online): buttons read %s" % [_button_texts(o)])
+		var leave := _button(o, PauseScreen.LEAVE_TEXT, "pause(online)")
+		if leave != null:
+			_check(_click(leave).is_empty() and leave.text == PauseScreen.LEAVE_CONFIRM_TEXT, "pause(online): first Leave only arms")
+			_check(_click(leave) == [["abandon", {}]], "pause(online): second Leave fires")
+		_close(o)
 	print("pause: ok")
+
+
+func _test_online() -> void:
+	var m := _open("online_screen.gd", {"mode": "menu", "status": "hello"}, "online(menu)")
+	if m != null:
+		_check(m.back_action == "back", "online(menu): back_action is '%s'" % m.back_action)
+		var want: Array[String] = ["Host a Game", "Join", "Back"]
+		_check(_button_texts(m) == want, "online(menu): buttons read %s" % [_button_texts(m)])
+		_check(_click(_button(m, "Host a Game", "online(menu)")) == [["host", {}]], "online(menu): Host button")
+		_check(_click(_button(m, "Back", "online(menu)")) == [["back", {}]], "online(menu): Back button")
+		# Join needs a well-formed code; a bad one only changes the status line.
+		var field := m.find_child("Code", true, false) as LineEdit
+		var status := m.find_child("Status", true, false) as Label
+		_check(field != null and status != null and status.text == "hello", "online(menu): code field and status")
+		if field != null and status != null:
+			field.text = "ab"
+			_check(_click(_button(m, "Join", "online(menu)")).is_empty() and status.text != "hello", "online(menu): short code refused")
+			field.text = "abcd"
+			field.text_changed.emit(field.text)
+			_check(field.text == "ABCD", "online(menu): code is upper-cased, got '%s'" % field.text)
+			_check(_click(_button(m, "Join", "online(menu)")) == [["join", {"code": "ABCD"}]], "online(menu): Join sends the code")
+		_check(m.first_focus() is Button and (m.first_focus() as Button).text == "Host a Game", "online(menu): first focus")
+		_close(m)
+	var w := _open("online_screen.gd", {"mode": "waiting", "host": true, "code": "WXYZ", "status": "open"}, "online(waiting)")
+	if w != null:
+		_check(w.back_action == "cancel", "online(waiting): back_action is '%s'" % w.back_action)
+		var code := w.find_child("CodeLabel", true, false) as Label
+		_check(code != null and code.text == "WXYZ", "online(waiting): shows the code")
+		_check(_click(_button(w, "Cancel", "online(waiting)")) == [["cancel", {}]], "online(waiting): Cancel button")
+		(w as OnlineScreen).set_status("changed")
+		var status := w.find_child("Status", true, false) as Label
+		_check(status != null and status.text == "changed", "online(waiting): set_status")
+		_close(w)
+	var r := _open("online_screen.gd", {"mode": "result", "won": true, "score": [7, 3]}, "online(result)")
+	if r != null:
+		var want_back: Array[String] = ["Back"]
+		_check(_button_texts(r) == want_back, "online(result): buttons read %s" % [_button_texts(r)])
+		_check(_click(_button(r, "Back", "online(result)")) == [["back", {}]], "online(result): Back button")
+		_close(r)
+	print("online: ok")
 
 
 func _test_settings() -> void:
