@@ -5,8 +5,21 @@
 [resource]
 render_priority = 0
 shader = ExtResource("1")
-shader_parameter/base_color = Color(0.11, 0.13, 0.22, 1)
-shader_parameter/line_color = Color(0.22, 0.28, 0.42, 1)
-shader_parameter/grid_size = 1.0
-shader_parameter/line_width = 0.03
-shader_parameter/fade_distance = 14.0
+shader_parameter/plank_color = Color(0.49, 0.31, 0.19, 1)
+shader_parameter/plank_dark = Color(0.33, 0.2, 0.13, 1)
+shader_parameter/joint_color = Color(0.16, 0.1, 0.09, 1)
+shader_parameter/ink = Color(0.102, 0.094, 0.188, 1)
+shader_parameter/line_paper = Color(0.961, 0.933, 0.863, 1)
+shader_parameter/line_orange = Color(1, 0.478, 0.18, 1)
+shader_parameter/plank_width = 0.16
+shader_parameter/plank_length = 1.9
+shader_parameter/joint_width = 0.012
+shader_parameter/pool_radius = 2.4
+shader_parameter/pool_soft = 3.2
+shader_parameter/pool_boost = 0.35
+shader_parameter/fade_start = 5.0
+shader_parameter/fade_end = 9.5
+shader_parameter/court_half = Vector2(2.75, 2.3)
+shader_parameter/circle_radius = 1.9
+shader_parameter/line_width = 0.045
+shader_parameter/line_alpha = 0.42

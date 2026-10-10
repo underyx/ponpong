@@ -199,18 +199,25 @@ func _on_stamina(data: Dictionary) -> void:
 	if player < 0 or player >= pips.size() or pips[player] == null:
 		return
 	var row := pips[player]
-	var panels: Array[Panel] = []
-	for child in row.get_children():
-		if child is Panel:
-			panels.append(child)
+	var cells := _cells(row)
 	if delta > 0:
-		for i in range(maxi(value - delta, 0), mini(value, panels.size())):
-			_pop_pip(panels[i])
+		for i in range(maxi(value - delta, 0), mini(value, cells.size())):
+			_pop_pip(cells[i])
 	else:
-		for i in range(maxi(value, 0), mini(value - delta, panels.size())):
-			_flash_pip(panels[i])
+		for i in range(maxi(value, 0), mini(value - delta, cells.size())):
+			_flash_pip(cells[i])
 	if value == 0:
 		_shake_bar(row)
+
+
+## The cells of a row made by UiKit.pips() (Panels) or UiKit.bolts()
+## (TextureRect glyphs), in order.
+static func _cells(row: Control) -> Array[Control]:
+	var out: Array[Control] = []
+	for child in row.get_children():
+		if child is Panel or child is TextureRect:
+			out.append(child)
+	return out
 
 
 # --- 3D ------------------------------------------------------------------------------
@@ -263,7 +270,7 @@ func _pop_rally() -> void:
 
 
 ## A pip that just lit swells and settles.
-func _pop_pip(pip: Panel) -> void:
+func _pop_pip(pip: Control) -> void:
 	_kill(_pip_tweens.get(pip))
 	pip.pivot_offset = pip.size * 0.5
 	pip.scale = Vector2.ONE * PIP_POP
@@ -272,17 +279,23 @@ func _pop_pip(pip: Panel) -> void:
 	_pip_tweens[pip] = t
 
 
-## A pip that just went out flashes red, then settles into its empty grey.
-func _flash_pip(pip: Panel) -> void:
+## A pip that just went out flashes pink, then settles into its empty grey:
+## a glyph through its modulate, a Panel through its style.
+func _flash_pip(pip: Control) -> void:
 	_kill(_pip_tweens.get(pip))
-	var style := pip.get_theme_stylebox("panel") as StyleBoxFlat
+	var empty := Color(UiKit.MUTED, UiKit.PIP_EMPTY_ALPHA)
 	pip.pivot_offset = pip.size * 0.5
 	pip.scale = Vector2.ONE * PIP_POP
 	var t := create_tween().set_parallel(true)
 	t.tween_property(pip, "scale", Vector2.ONE, PIP_POP_TIME).set_ease(Tween.EASE_OUT)
-	if style != null:
-		style.bg_color = UiKit.DANGER
-		t.tween_property(style, "bg_color", Color(UiKit.MUTED, UiKit.PIP_EMPTY_ALPHA), PIP_FLASH_TIME)
+	if pip is TextureRect:
+		pip.modulate = UiKit.DANGER
+		t.tween_property(pip, "modulate", empty, PIP_FLASH_TIME)
+	else:
+		var style := pip.get_theme_stylebox("panel") as StyleBoxFlat
+		if style != null:
+			style.bg_color = UiKit.DANGER
+			t.tween_property(style, "bg_color", empty, PIP_FLASH_TIME)
 	_pip_tweens[pip] = t
 
 
@@ -322,9 +335,8 @@ func _reset() -> void:
 	_pip_tweens.clear()
 	for row in pips:
 		if row != null:
-			for child in row.get_children():
-				if child is Panel:
-					(child as Panel).scale = Vector2.ONE
+			for cell in _cells(row):
+				cell.scale = Vector2.ONE
 	_settle_bar()
 
 

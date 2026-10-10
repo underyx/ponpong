@@ -1,0 +1,11 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3]
+
+[ext_resource type="Shader" path="res://shaders/vignette.gdshader" id="1"]
+
+[resource]
+shader = ExtResource("1")
+shader_parameter/ink = Color(0.102, 0.094, 0.188, 1)
+shader_parameter/strength = 0.3
+shader_parameter/start = 0.62
+shader_parameter/dot_px = 7.0
+shader_parameter/grain = 0.035
