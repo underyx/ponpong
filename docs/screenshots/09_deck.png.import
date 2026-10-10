@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://c17xxv0nt55a2"
-path="res://.godot/imported/hand.png-a0579471773e79bf8da990add49b4325.ctex"
+uid="uid://cdxj31cknedo0"
+path="res://.godot/imported/09_deck.png-7e614502aa814dd967219612048f9c96.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://docs/screenshots/hand.png"
-dest_files=["res://.godot/imported/hand.png-a0579471773e79bf8da990add49b4325.ctex"]
+source_file="res://docs/screenshots/09_deck.png"
+dest_files=["res://.godot/imported/09_deck.png-7e614502aa814dd967219612048f9c96.ctex"]
 
 [params]
 

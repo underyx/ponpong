@@ -6,16 +6,27 @@
 ## the main menu once the run ended and every screen was seen. Along the way
 ## it checks the feel layer keeps its promises: no `fx` moment fires while
 ## the match is paused, the time scale is back at base on every screen, and
-## the Sfx node built every clip with sound in it.
+## the Sfx node built every clip with sound in it. It also round-trips the
+## settings (from the pause menu: F11 twice, which saves by itself, then a
+## toggle and the slider that only Back can write, and Back must write a
+## file that loads back; from the main menu on the way out) and the save
+## file (after the first match end, load_run() must resume the run and
+## Continue must land on the same screen).
 ## Usage: godot --headless --fixed-fps 60 -s tests/autoplay.gd
 extends SceneTree
 
 const SEED := 20261010
 const MAX_FRAMES := 60000
 const MAX_RUNS := 6
-const REQUIRED_SCREENS := ["main_menu", "match_end", "reward", "deck", "pause", "run_end"]
-## Where this test saves its runs, so a check never touches the player's.
+const REQUIRED_SCREENS := ["main_menu", "match_end", "reward", "deck", "pause", "run_end", "settings"]
+## Where this test saves its runs and its settings, so a check never touches
+## the player's.
 const TEST_SAVE := "user://test_run.json"
+const TEST_SETTINGS := "user://test_settings.cfg"
+## What the settings slider is set to from the pause menu and from the main
+## menu; the file must hand each back.
+const PAUSE_VOLUME := 0.35
+const MENU_VOLUME := 0.5
 ## How many frames the pause invariant watches the frozen match: longer than
 ## a ball flight plus AI_THINK_TIME at 60 fps, so a timer or tween that keeps
 ## running while paused moves the state inside the window.
@@ -58,6 +69,15 @@ var stop_frames := 0
 var cursor_done := false
 var cursor_step := 0
 var cursor_frame := 0
+## What the Screen shake toggle was flipped to on the settings screen from
+## pause; the file must hand it back.
+var shake_expect := false
+## After the first match end the run is reloaded from its file; the next
+## screen must be this one.
+var continue_expect := ""
+var continue_checked := false
+## The settings visit from the main menu, on the way out: 0 not yet, 1 open.
+var settings_menu_step := 0
 var rng := RandomNumberGenerator.new()
 
 
@@ -87,14 +107,20 @@ func _process(_delta: float) -> bool:
 		# show here first.
 		_check(is_equal_approx(Engine.time_scale, Feel.base_time_scale),
 			"time scale %.3f is not base %.3f on screen %s" % [Engine.time_scale, Feel.base_time_scale, name])
+		if continue_expect != "":
+			_check(name == continue_expect, "the reloaded run continued to %s, not %s" % [name if name != "" else "match", continue_expect])
+			continue_expect = ""
 	_check_focus(name)
 	if pause_step > 0:
 		_pause_flow()
 		return false
 	match name:
 		"main_menu":
+			# The run file never outlives a run: no Continue at boot, none
+			# after the run end.
+			_check(not bool(director.screen.args.get("has_save", false)), "main menu offers Continue with no run to resume")
 			if finishing:
-				return _finish()
+				return _finish_via_settings()
 			_press("new_run")
 		"":
 			_drive_match()
@@ -102,8 +128,12 @@ func _process(_delta: float) -> bool:
 			# Only the pause flow opens this screen; anything else is a stray.
 			_fail("pause screen appeared outside the pause flow")
 			_press("resume")
+		"settings":
+			# From pause the pause flow drives it; this is the main menu's.
+			_settings_from_menu()
 		"match_end":
 			_check(is_equal_approx(Engine.time_scale, Feel.base_time_scale), "time scale is back to base on match_end")
+			_continue_check()
 			_press("continue")
 		"reward":
 			_reward()
@@ -122,13 +152,134 @@ func _boot() -> void:
 	director.next_seed = SEED
 	director.save_path = TEST_SAVE
 	_remove_test_save()
+	# The Director reads the settings in _ready: point it at a file of this
+	# test's own first, with the defaults in the statics and no file yet.
+	Settings.path = TEST_SETTINGS
+	Settings.reset()
+	_remove_test_settings()
 	root.add_child(director)
+	_check(is_equal_approx(Settings.master_volume, Settings.DEFAULT_MASTER_VOLUME) and Settings.screen_shake
+		and not Settings.fullscreen, "settings are the defaults with no file")
+	_check(is_equal_approx(AudioServer.get_bus_volume_db(0), linear_to_db(Settings.DEFAULT_MASTER_VOLUME)),
+		"the Master bus is at the default volume after boot")
 	# The Director turns hit stop off headlessly; turn it back on so the
 	# time-scale checks below watch stops that really happened and were
 	# really undone.
 	Feel.enabled = true
 	director.match_scene.fx.connect(func(_name: String, _data: Dictionary) -> void: fx_events += 1)
 	print("autoplay: director loaded, run seed %d" % SEED)
+
+
+# --- settings and continue -------------------------------------------------------
+
+## On the way out: the main menu opens Settings once, the slider is moved,
+## Back saves it, and the file must hand the new volume back.
+func _finish_via_settings() -> bool:
+	if settings_menu_step == 0:
+		settings_menu_step = 1
+		_press("settings")
+		return false
+	_check(FileAccess.file_exists(TEST_SETTINGS), "Back from the menu's settings wrote %s" % TEST_SETTINGS)
+	Settings.master_volume = 0.0
+	_check(Settings.load() and is_equal_approx(Settings.master_volume, MENU_VOLUME),
+		"the menu's volume change was saved (file says %.2f)" % Settings.master_volume)
+	return _finish()
+
+
+## The settings screen opened from the main menu: unpaused, returns to the
+## menu, the slider holds focus and moves the Master bus.
+func _settings_from_menu() -> void:
+	var s := director.screen as SettingsScreen
+	if s == null:
+		_fail("the settings screen is not a SettingsScreen")
+		_press("back")
+		return
+	_check(settings_menu_step == 1, "settings opened from the menu outside the final visit")
+	_check(String(s.args.get("return", "")) == "main_menu", "settings from the menu return to '%s'" % s.args.get("return", ""))
+	_check(not paused, "tree paused under the settings screen from the menu")
+	_check(s.first_focus() == s.slider and root.gui_get_focus_owner() == s.slider, "the slider holds focus on the settings screen")
+	s.slider.value = MENU_VOLUME
+	_check(is_equal_approx(Settings.master_volume, MENU_VOLUME), "the slider set master_volume (%.2f)" % Settings.master_volume)
+	_check(is_equal_approx(AudioServer.get_bus_volume_db(0), linear_to_db(MENU_VOLUME)), "the Master bus follows the slider")
+	_check(s.percent_label.text == Settings.percent(MENU_VOLUME), "percent label reads '%s'" % s.percent_label.text)
+	_press("back")
+
+
+## The settings screen opened from pause: still paused, returns to pause, the
+## slider holds focus, and F11 is fired (its effect is checked next frame by
+## the pause flow). The toggle and the slider are changed later, after the
+## second F11, by _change_settings_from_pause().
+func _settings_from_pause() -> void:
+	var s := director.screen as SettingsScreen
+	if s == null:
+		_fail("the settings screen from pause is not a SettingsScreen")
+		return
+	_check(paused, "tree unpaused under the settings screen from pause")
+	_check(String(s.args.get("return", "")) == "pause", "settings from pause return to '%s'" % s.args.get("return", ""))
+	_check(s.first_focus() == s.slider and root.gui_get_focus_owner() == s.slider, "the slider holds focus on settings from pause")
+	_check(not Settings.fullscreen, "fullscreen already on before F11")
+	_fire("fullscreen")
+	print("  [%5d] settings from pause: F11 fired" % frames)
+
+
+## After the second F11 has written the file: flip the Screen shake toggle
+## and move the slider. Every F11 saves all the statics, so these changes
+## come last, after the final save, and the file must not hold them yet;
+## only Back can write them, which the pause flow checks after it.
+func _change_settings_from_pause() -> void:
+	var s := director.screen as SettingsScreen
+	if s == null:
+		_fail("the settings screen from pause is not a SettingsScreen")
+		return
+	var volume_before := Settings.master_volume
+	shake_expect = not Settings.screen_shake
+	s.shake_button.button_pressed = shake_expect
+	_check(Settings.screen_shake == shake_expect, "the Screen shake toggle sets Settings.screen_shake")
+	var rig := director.match_scene.camera as CameraRig
+	_check(rig != null and rig.shakes() == shake_expect, "the camera rig follows the Screen shake toggle at once")
+	s.slider.value = PAUSE_VOLUME
+	_check(is_equal_approx(Settings.master_volume, PAUSE_VOLUME), "the slider set master_volume (%.2f)" % Settings.master_volume)
+	var saved_shake: Variant = _settings_file_value("screen_shake")
+	var saved_volume: Variant = _settings_file_value("master_volume")
+	_check(saved_shake == (not shake_expect) and typeof(saved_volume) == TYPE_FLOAT
+		and is_equal_approx(float(saved_volume), volume_before),
+		"the file already holds the new shake and volume before Back (shake %s, volume %s)" % [saved_shake, saved_volume])
+	print("  [%5d] settings from pause: shake -> %s, volume %.2f, not on disk yet" % [frames, shake_expect, PAUSE_VOLUME])
+
+
+## After the first match end the run file must resume to the same place:
+## load_run() replaces the run with the saved copy and Continue routes on.
+func _continue_check() -> void:
+	if continue_checked or bool(director.screen.args.get("run_over", false)):
+		return
+	continue_checked = true
+	var before: Dictionary = director.run.to_dict()
+	var expect := _route_screen(director.run.phase)
+	_check(FileAccess.file_exists(TEST_SAVE), "the run was saved at match end")
+	_check(director.load_run(), "load_run() resumes the run saved at match end")
+	_check(director.run.to_dict() == before, "the resumed run equals the one that was saved")
+	continue_expect = expect
+	print("  [%5d] reloaded the run from its file; Continue must land on %s" % [frames, expect])
+
+
+## The screen _route() shows for a run phase.
+static func _route_screen(phase: int) -> String:
+	match phase:
+		RunState.Phase.REWARD:
+			return "reward"
+		RunState.Phase.REMOVE:
+			return "deck"
+		RunState.Phase.MATCH:
+			return ""
+	return "run_end"
+
+
+## A value from the settings file as it is on disk, or null without a file.
+static func _settings_file_value(key: String) -> Variant:
+	var cf := ConfigFile.new()
+	if cf.load(TEST_SETTINGS) != OK:
+		return null
+	return cf.get_value(Settings.SECTION, key, null)
 
 
 # --- screens -------------------------------------------------------------------
@@ -230,7 +381,9 @@ func _play() -> void:
 
 ## Once per run: Esc mid-rally, the match must not move for PAUSE_WATCH_FRAMES
 ## (the rules state, the ball, the paddles and the log line), the deck opens
-## from the pause menu, and resume restores everything.
+## from the pause menu, then the settings (F11 twice, then a toggle and the
+## slider that only Back can save, and Back writes a file that loads back),
+## and resume restores everything.
 func _pause_flow() -> bool:
 	var m := director.match_scene
 	var is_paused := paused
@@ -286,7 +439,8 @@ func _pause_flow() -> bool:
 				pause_step = 0
 		4:
 			if director.screen_name == "pause":
-				_press("resume")
+				_check(is_paused, "tree still paused back on the pause screen")
+				_press("settings")
 				pause_step = 5
 				pause_frame = frames
 			elif frames - pause_frame > SCREEN_TIMEOUT:
@@ -294,6 +448,55 @@ func _pause_flow() -> bool:
 				pause_done = true
 				pause_step = 0
 		5:
+			if director.screen_name == "settings":
+				_settings_from_pause()
+				pause_step = 6
+				pause_frame = frames
+			elif frames - pause_frame > SCREEN_TIMEOUT:
+				_fail("settings screen did not open from pause")
+				pause_done = true
+				pause_step = 0
+		6:
+			# The F11 fired last frame has gone through the Director: the
+			# setting flipped, was saved, and the screen followed.
+			_check(director.screen_name == "settings", "still on settings after F11")
+			_check(Settings.fullscreen, "F11 turned fullscreen on")
+			_check(_settings_file_value("fullscreen") == true, "F11 saved fullscreen on")
+			var s := director.screen as SettingsScreen
+			_check(s != null and s.fullscreen_button.button_pressed and s.fullscreen_button.text == "On",
+				"the settings screen followed F11")
+			_fire("fullscreen")
+			pause_step = 7
+		7:
+			# The second F11 has gone through and saved: now the changes that
+			# only Back can write, then Back.
+			_check(not Settings.fullscreen, "F11 turned fullscreen back off")
+			_check(_settings_file_value("fullscreen") == false, "F11 saved fullscreen off")
+			_change_settings_from_pause()
+			_press("back")
+			pause_step = 8
+			pause_frame = frames
+		8:
+			if director.screen_name == "pause":
+				_check(is_paused, "tree still paused back from settings")
+				_check(FileAccess.file_exists(TEST_SETTINGS), "Back from settings left %s" % TEST_SETTINGS)
+				# The file must hand back what the screen set after the last
+				# F11 save: scramble the statics, load, compare.
+				Settings.screen_shake = not shake_expect
+				Settings.master_volume = 0.0
+				_check(Settings.load(), "Settings.load() reads the file Back wrote")
+				_check(Settings.screen_shake == shake_expect, "screen_shake %s did not come back from the file" % shake_expect)
+				_check(is_equal_approx(Settings.master_volume, PAUSE_VOLUME), "master_volume came back as %.2f" % Settings.master_volume)
+				_check(not Settings.fullscreen, "fullscreen came back on from the file")
+				print("  [%5d] settings round trip held (shake %s, volume %.2f)" % [frames, shake_expect, Settings.master_volume])
+				_press("resume")
+				pause_step = 9
+				pause_frame = frames
+			elif frames - pause_frame > SCREEN_TIMEOUT:
+				_fail("pause screen did not come back from settings")
+				pause_done = true
+				pause_step = 0
+		9:
 			if director.screen_name == "":
 				_check(not is_paused, "tree unpaused after resume")
 				_check(is_equal_approx(Engine.time_scale, Feel.base_time_scale), "time scale restored after resume")
@@ -430,12 +633,17 @@ func _finish() -> bool:
 	# interrupted fade must not leak the screen it was about to show.
 	var orphans := int(Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT))
 	_check(orphans == 0, "%d orphan nodes at the end of the run" % orphans)
+	_check(continue_checked, "the run was reloaded from its file after a match end")
+	_check(settings_menu_step == 1, "settings were visited from the main menu")
 	print("autoplay: %d run(s), %d local plays (%d tired), %d reward picks, %d score changes, %d frames (%d in hit stop), screens %s" % [
 		runs, plays, tired_plays, real_picks, points, frames, stop_frames, visited])
 	print("autoplay: %s" % ("OK" if failures == 0 else "%d FAILURES" % failures))
 	root.remove_child(director)
 	director.free()
 	_remove_test_save()
+	_remove_test_settings()
+	Settings.reset()
+	Settings.path = Settings.DEFAULT_PATH
 	quit(0 if failures == 0 else 1)
 	return true
 
@@ -472,3 +680,8 @@ func _check_sfx() -> void:
 static func _remove_test_save() -> void:
 	if FileAccess.file_exists(TEST_SAVE):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_SAVE))
+
+
+static func _remove_test_settings() -> void:
+	if FileAccess.file_exists(TEST_SETTINGS):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_SETTINGS))

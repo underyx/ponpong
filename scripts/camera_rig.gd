@@ -38,7 +38,10 @@ const PUNCH_OUT := 0.25
 const PUSH_IN := 8.0
 const PUSH_IN_TIME := 1.2
 
-## Off, shake() does nothing visible. The Settings screen flips this.
+## The rig's own switch: off, shake() does nothing visible whatever the
+## settings say. The player's choice is Settings.screen_shake, read every
+## frame through shakes(), so flipping it on the Settings screen takes at
+## once, even from the pause menu of a running match.
 var shake_enabled := true
 ## 0..1, decays by itself; shake() adds to it.
 var trauma := 0.0
@@ -78,15 +81,23 @@ func _process(delta: float) -> void:
 	else:
 		transform = play
 	trauma = maxf(0.0, trauma - TRAUMA_DECAY * delta)
-	var amount := trauma * trauma * SHAKE_MAX if shake_enabled else 0.0
+	var amount := trauma * trauma * SHAKE_MAX if shakes() else 0.0
 	h_offset = lean_offset + amount * _noise.get_noise_1d(_time * SHAKE_RATE)
 	v_offset = amount * _noise.get_noise_1d(_time * SHAKE_RATE + 100.0)
 
 
 # --- API ----------------------------------------------------------------------
 
+## Whether trauma moves the camera right now: the rig's own flag and the
+## player's setting both have to be on.
+func shakes() -> bool:
+	return shake_enabled and Settings.screen_shake
+
+
 ## Adds `amount` of trauma (0..1); the shake is trauma squared, so small hits
-## barely register and a big one is a thump.
+## barely register and a big one is a thump. Trauma accrues even while the
+## shake is off, so turning it back on mid-match changes nothing but the
+## picture.
 func shake(amount: float) -> void:
 	trauma = minf(1.0, trauma + amount)
 

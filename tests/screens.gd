@@ -4,11 +4,15 @@
 ## design table lists through `done`, with its data. Every screen is also
 ## driven through its real buttons (a click must deliver the bound action),
 ## and CardView is filled with all 25 cards in hand mode (every incoming type,
-## stamina 0 and 6) and in deck mode. Exit code 1 on any failure.
+## stamina 0 and 6) and in deck mode. The Settings screen must apply every
+## change live, and Settings must save and load every value back. Exit code 1
+## on any failure.
 ## Usage: godot --headless -s tests/screens.gd
 extends SceneTree
 
 const SCREENS_DIR := "res://scripts/screens/"
+## Where this test keeps its settings, so a check never touches the player's.
+const TEST_SETTINGS := "user://test_settings.cfg"
 const INCOMING_TYPES := [BallType.NONE, BallType.FLAT, BallType.HIGH, BallType.SPIN, BallType.FAST]
 const MATCH_STATS := [
 	{"shots": 12, "winners": 5, "faults": 3, "tired_plays": 2},
@@ -38,6 +42,7 @@ func _process(_delta: float) -> bool:
 	_test_reward()
 	_test_deck()
 	_test_run_end()
+	_test_settings()
 	print("screens: %s" % ("OK" if failures == 0 else "%d FAILURES" % failures))
 	quit(0 if failures == 0 else 1)
 	return true
@@ -156,6 +161,21 @@ func _labels_text(node: Node) -> String:
 	return out
 
 
+## The text of every plain Button under `node`, in tree order: the menu.
+func _button_texts(node: Node) -> Array[String]:
+	var out: Array[String] = []
+	for child in node.get_children():
+		if child is Button and not (child is CardView) and not (child is CheckButton):
+			out.append((child as Button).text)
+		out.append_array(_button_texts(child))
+	return out
+
+
+static func _remove_test_settings() -> void:
+	if FileAccess.file_exists(TEST_SETTINGS):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_SETTINGS))
+
+
 # --- CardView -------------------------------------------------------------------
 
 func _test_card_view() -> void:
@@ -269,8 +289,7 @@ func _test_main_menu() -> void:
 		if s == null:
 			continue
 		_check(s.back_action == "", "%s: back_action is '%s'" % [label, s.back_action])
-		# press() carries every action of the design's row, including the
-		# Settings button that only arrives in M4.
+		# press() carries every action of the design's row.
 		for action in ["new_run", "continue", "settings", "quit"]:
 			_expect(s, action, {}, label)
 		_check(_click(_button(s, "New Run", label)) == [["new_run", {}]], "%s: New Run button" % label)
@@ -278,7 +297,13 @@ func _test_main_menu() -> void:
 		_check(continues.size() == (1 if has_save else 0), "%s: %d Continue buttons" % [label, continues.size()])
 		if continues.size() == 1:
 			_check(_click(continues[0]) == [["continue", {}]], "%s: Continue button" % label)
+		_check(_click(_button(s, "Settings", label)) == [["settings", {}]], "%s: Settings button" % label)
 		_check(_click(_button(s, "Quit", label)) == [["quit", {}]], "%s: Quit button" % label)
+		var want: Array[String] = ["New Run", "Settings", "Quit"]
+		if has_save:
+			want.insert(1, "Continue")
+		_check(_button_texts(s) == want, "%s: buttons read %s" % [label, _button_texts(s)])
+		_check(s.first_focus() is Button and (s.first_focus() as Button).text == "New Run", "%s: first focus is not New Run" % label)
 		_close(s)
 	print("main menu: ok")
 
@@ -291,6 +316,9 @@ func _test_pause() -> void:
 			_expect(s, action, {}, "pause")
 		_check(_click(_button(s, "Resume", "pause")) == [["resume", {}]], "pause: Resume button")
 		_check(_click(_button(s, "Deck", "pause")) == [["deck", {}]], "pause: Deck button")
+		_check(_click(_button(s, "Settings", "pause")) == [["settings", {}]], "pause: Settings button")
+		var want: Array[String] = ["Resume", "Deck", "Settings", PauseScreen.ABANDON_TEXT]
+		_check(_button_texts(s) == want, "pause: buttons read %s" % [_button_texts(s)])
 		# Abandon asks twice: the first click only arms the button.
 		var abandon := _button(s, PauseScreen.ABANDON_TEXT, "pause")
 		if abandon != null:
@@ -298,6 +326,117 @@ func _test_pause() -> void:
 			_check(_click(abandon) == [["abandon", {}]], "pause: second Abandon fires")
 		_close(s)
 	print("pause: ok")
+
+
+func _test_settings() -> void:
+	Settings.path = TEST_SETTINGS
+	_remove_test_settings()
+	Settings.reset()
+	Settings.apply()
+	for from in ["main_menu", "pause"]:
+		var label := "settings(from %s)" % from
+		var s := _open("settings_screen.gd", {"return": from}, label)
+		if s == null:
+			continue
+		var ss := s as SettingsScreen
+		_check(ss.back_action == "back", "%s: back_action is '%s'" % [label, ss.back_action])
+		_check(ss.first_focus() == ss.slider and ss.slider is HSlider, "%s: first focus is not the slider" % label)
+		_check(ss.slider.min_value == 0.0 and ss.slider.max_value == 1.0 and is_equal_approx(ss.slider.step, 0.05),
+			"%s: slider range %s..%s step %s" % [label, ss.slider.min_value, ss.slider.max_value, ss.slider.step])
+		_check(is_equal_approx(ss.slider.value, Settings.master_volume), "%s: slider starts at the setting" % label)
+		_check(ss.percent_label.text == "80%", "%s: percent label reads '%s'" % [label, ss.percent_label.text])
+		_check(ss.fullscreen_button.button_pressed == Settings.fullscreen, "%s: fullscreen toggle starts wrong" % label)
+		_check(ss.shake_button.button_pressed == Settings.screen_shake, "%s: shake toggle starts wrong" % label)
+		_check(ss.fullscreen_button.text == "Off" and ss.shake_button.text == "On", "%s: toggle captions" % label)
+		_expect(ss, "back", {}, label)
+		_check(_click(ss.back_button) == [["back", {}]], "%s: Back button" % label)
+		_check(_click(_button(ss, "Back", label)) == [["back", {}]], "%s: the one Back button" % label)
+		# Every change applies live: the statics and the Master bus follow.
+		ss.slider.value = 0.35
+		_check(is_equal_approx(Settings.master_volume, 0.35), "%s: slider sets master_volume (%.2f)" % [label, Settings.master_volume])
+		_check(ss.percent_label.text == "35%", "%s: percent label follows the slider ('%s')" % [label, ss.percent_label.text])
+		_check(is_equal_approx(AudioServer.get_bus_volume_db(0), linear_to_db(0.35)), "%s: Master bus follows the slider" % label)
+		_check(not AudioServer.is_bus_mute(0), "%s: Master bus muted at 35%%" % label)
+		ss.slider.value = 0.0
+		_check(Settings.master_volume == 0.0 and AudioServer.is_bus_mute(0), "%s: 0%% mutes the Master bus" % label)
+		ss.slider.value = 0.8
+		_check(not AudioServer.is_bus_mute(0), "%s: Master bus unmuted again" % label)
+		ss.fullscreen_button.button_pressed = true
+		_check(Settings.fullscreen and ss.fullscreen_button.text == "On", "%s: fullscreen toggle sets the static" % label)
+		ss.fullscreen_button.button_pressed = false
+		_check(not Settings.fullscreen and ss.fullscreen_button.text == "Off", "%s: fullscreen toggle clears the static" % label)
+		ss.shake_button.button_pressed = false
+		_check(not Settings.screen_shake and ss.shake_button.text == "Off", "%s: shake toggle clears the static" % label)
+		ss.shake_button.button_pressed = true
+		_check(Settings.screen_shake and ss.shake_button.text == "On", "%s: shake toggle sets the static" % label)
+		# refresh() follows the statics (F11 while the screen is up).
+		Settings.master_volume = 0.5
+		Settings.fullscreen = true
+		Settings.screen_shake = false
+		ss.refresh()
+		_check(is_equal_approx(ss.slider.value, 0.5) and ss.percent_label.text == "50%", "%s: refresh() moves the slider" % label)
+		_check(ss.fullscreen_button.button_pressed and ss.fullscreen_button.text == "On", "%s: refresh() sets the fullscreen toggle" % label)
+		_check(not ss.shake_button.button_pressed and ss.shake_button.text == "Off", "%s: refresh() clears the shake toggle" % label)
+		var text := _labels_text(ss)
+		for want in ["SETTINGS", "Master volume", "Fullscreen", "Screen shake"]:
+			_check(want in text, "%s: '%s' missing from the screen" % [label, want])
+		Settings.reset()
+		_close(ss)
+	# Settings save then load round-trips every value.
+	Settings.master_volume = 0.35
+	Settings.fullscreen = true
+	Settings.screen_shake = false
+	_check(Settings.save(), "settings: save() failed")
+	_check(FileAccess.file_exists(TEST_SETTINGS), "settings: save() wrote no file at %s" % TEST_SETTINGS)
+	Settings.reset()
+	_check(is_equal_approx(Settings.master_volume, 0.8) and not Settings.fullscreen and Settings.screen_shake, "settings: reset()")
+	_check(Settings.load(), "settings: load() did not find the file")
+	_check(is_equal_approx(Settings.master_volume, 0.35), "settings: master_volume %.2f after load" % Settings.master_volume)
+	_check(Settings.fullscreen, "settings: fullscreen lost in the round trip")
+	_check(not Settings.screen_shake, "settings: screen_shake lost in the round trip")
+	# A value outside the range is clamped on the way in.
+	var cf := ConfigFile.new()
+	cf.set_value(Settings.SECTION, "master_volume", 7.0)
+	cf.set_value(Settings.SECTION, "fullscreen", false)
+	cf.set_value(Settings.SECTION, "screen_shake", true)
+	_check(cf.save(TEST_SETTINGS) == OK, "settings: cannot write the clamp fixture")
+	Settings.load()
+	_check(Settings.master_volume == 1.0 and not Settings.fullscreen and Settings.screen_shake, "settings: load() clamps the volume")
+	# Values of the wrong type (a hand-edited file) fall back to the defaults
+	# without a script error, and load() still reports a file was read, so
+	# the next save() rewrites it clean. The statics are scrambled first so
+	# the defaults can only have come from the fallback.
+	var bad := ConfigFile.new()
+	bad.set_value(Settings.SECTION, "master_volume", "loud")
+	bad.set_value(Settings.SECTION, "fullscreen", "yes")
+	bad.set_value(Settings.SECTION, "screen_shake", [1])
+	_check(bad.save(TEST_SETTINGS) == OK, "settings: cannot write the wrong-type fixture")
+	Settings.master_volume = 0.5
+	Settings.fullscreen = true
+	Settings.screen_shake = false
+	_check(Settings.load(), "settings: load() did not read the wrong-type fixture")
+	_check(is_equal_approx(Settings.master_volume, Settings.DEFAULT_MASTER_VOLUME)
+		and Settings.fullscreen == Settings.DEFAULT_FULLSCREEN and Settings.screen_shake == Settings.DEFAULT_SCREEN_SHAKE,
+		"settings: wrong-typed values do not fall back to the defaults (%.2f, %s, %s)" % [
+			Settings.master_volume, Settings.fullscreen, Settings.screen_shake])
+	# No file: load() says so and leaves the statics alone.
+	_remove_test_settings()
+	Settings.master_volume = 0.6
+	_check(not Settings.load(), "settings: load() claimed to read a missing file")
+	_check(is_equal_approx(Settings.master_volume, 0.6), "settings: a missing file changed master_volume")
+	# load_and_apply: the file reaches the Master bus.
+	Settings.master_volume = 0.25
+	Settings.save()
+	Settings.reset()
+	Settings.load_and_apply()
+	_check(is_equal_approx(Settings.master_volume, 0.25), "settings: load_and_apply() did not load")
+	_check(is_equal_approx(AudioServer.get_bus_volume_db(0), linear_to_db(0.25)), "settings: load_and_apply() did not apply")
+	_check(Settings.percent(0.25) == "25%" and Settings.percent(1.0) == "100%" and Settings.percent(0.0) == "0%", "settings: percent()")
+	Settings.reset()
+	Settings.apply()
+	_remove_test_settings()
+	Settings.path = Settings.DEFAULT_PATH
+	print("settings: ok")
 
 
 func _test_match_end() -> void:

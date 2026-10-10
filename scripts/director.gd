@@ -57,6 +57,9 @@ var _pending: UiScreen
 
 func _ready() -> void:
 	InputSetup.register()
+	# The player's volume, window mode and shake choice, before anything
+	# makes a sound or a frame is drawn.
+	Settings.load_and_apply()
 	# Hit stop restores to the time scale the game booted with (--time-scale
 	# included), and is off headlessly, where frames are not time.
 	Feel.base_time_scale = Engine.time_scale
@@ -94,9 +97,23 @@ func _process(_delta: float) -> void:
 
 func _input(event: InputEvent) -> void:
 	_track_device(event)
+	if event.is_action_pressed("fullscreen"):
+		get_viewport().set_input_as_handled()
+		toggle_fullscreen()
+		return
 	if run != null and screen == null and not transitioning and event.is_action_pressed("pause"):
 		get_viewport().set_input_as_handled()
 		toggle_pause()
+
+
+## F11 anywhere: the window mode flips, is applied and is saved at once. A
+## Settings screen that is up shows the change.
+func toggle_fullscreen() -> void:
+	Settings.fullscreen = not Settings.fullscreen
+	Settings.apply()
+	Settings.save()
+	if screen is SettingsScreen:
+		(screen as SettingsScreen).refresh()
 
 
 # --- run flow ----------------------------------------------------------------
@@ -235,6 +252,9 @@ func _on_screen_done(action: String, data: Dictionary) -> void:
 			match_scene.set_idle(true)
 			show_screen("main_menu", _menu_args())
 		"settings/back":
+			# Every change was applied as it was made; leaving is what writes
+			# the file.
+			Settings.save()
 			if String(screen.args.get("return", "")) == "pause":
 				show_screen("pause")
 			else:
@@ -337,6 +357,8 @@ func _make_screen(name: String) -> UiScreen:
 			return DeckScreen.new()
 		"run_end":
 			return RunEndScreen.new()
+		"settings":
+			return SettingsScreen.new()
 	return null
 
 

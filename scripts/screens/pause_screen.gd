@@ -1,5 +1,6 @@
-## The pause menu over a frozen match. Abandon Run asks twice: the first press
-## relabels the button, the second one fires. Esc or B resumes.
+## The pause menu over a frozen match: Resume, Deck, Settings, Abandon Run.
+## Abandon Run asks twice: the first press relabels the button, the second
+## one fires. Esc or B resumes.
 class_name PauseScreen
 extends UiScreen
 
@@ -22,6 +23,7 @@ func setup(p_args: Dictionary) -> void:
 	box.add_child(_spacer(8))
 	_resume = _menu_button(box, "Resume", "resume")
 	_menu_button(box, "Deck", "deck")
+	_menu_button(box, "Settings", "settings")
 	_abandon = UiKit.button(ABANDON_TEXT)
 	_abandon.size_flags_horizontal = SIZE_SHRINK_CENTER
 	_abandon.pressed.connect(_on_abandon_pressed)

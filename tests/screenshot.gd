@@ -3,6 +3,8 @@
 ## Drives the Director with a pinned seed, waiting for each state rather than
 ## counting frames, because software GL frame times vary. After the first
 ## point it applies run actions directly instead of playing matches out.
+## Frames: 01_menu, 11_settings (from the menu), 02_hand, 03_aim, 06_pause,
+## 04_shot, 05_bounce, 07_match_end, 08_reward, 09_deck, 10_run_end.
 extends SceneTree
 
 const SEED := 20261010
@@ -22,8 +24,10 @@ const BOUNCE_SETTLE := 2
 ## than the puff and the ring live. On a desktop this is close to no change.
 const SHOT_FRAME_TIME := 1.0 / 30.0
 const MIN_SHOT_SCALE := 0.05
-## Where this test saves its run, so a check never touches the player's.
+## Where this test saves its run and its settings, so a check never touches
+## the player's.
 const TEST_SAVE := "user://test_run.json"
+const TEST_SETTINGS := "user://test_settings.cfg"
 
 var director: Director
 var frames := 0
@@ -70,71 +74,82 @@ func _process(_delta: float) -> bool:
 		0:
 			if name == "main_menu":
 				_save("01_menu.png")
+				director.screen.press("settings")
+				_next(SETTLE)
+		1:
+			# The slider holds focus, so the gold ring shows around it.
+			if name == "settings":
+				_save("11_settings.png")
+				director.screen.press("back")
+				_next(SETTLE)
+		2:
+			if name == "main_menu":
 				director.screen.press("new_run")
 				_next()
-		1:
+		3:
 			if m.input_open and m.input_mode == MatchScene.InputMode.HAND:
 				_tire_one_card(m)
 				_next(SETTLE, ENTRY_SETTLE)
-		2:
+		4:
 			_save("02_hand.png")
 			m._select_card(0)
 			m.cursor = Vector2i(1, 3)
 			m._set_hover(m._cursor_zone())
 			_next(SETTLE)
-		3:
+		5:
 			_save("03_aim.png")
 			director.toggle_pause()
 			_next(SETTLE)
-		4:
+		6:
 			if name == "pause":
 				_save("06_pause.png")
 				director.screen.press("resume")
 				_next(SETTLE)
-		5:
+		7:
 			if name == "":
 				m.ball.bounced.connect(func(_pos: Vector3) -> void: bounced = true, CONNECT_ONE_SHOT)
 				_slow_clock()
 				m.choose_zone(m._cursor_zone())
 				_next()
-		6:
+		8:
 			if bounced:
 				_next(BOUNCE_SETTLE)
-		7:
+		9:
 			_save("04_shot.png")
 			_next(1)
-		8:
+		10:
 			_save("05_bounce.png")
 			_restore_clock()
 			_next(1)
-		9:
+		11:
 			if m.input_open:
 				var stats := [m.state.players[0].stats.duplicate(), m.state.players[1].stats.duplicate()]
 				director._on_match_finished(0, [5, 3], 7, stats)
 				_next(SETTLE)
-		10:
+		12:
 			if name == "match_end":
 				_save("07_match_end.png")
 				director.screen.press("continue")
 				_next(SETTLE)
-		11:
+		13:
 			# The reward cards flip in once the screen is up: let them finish.
 			if name == "reward":
 				_next(SETTLE, ENTRY_SETTLE)
-		12:
+		14:
 			_save("08_reward.png")
 			director.screen.press("deck")
 			_next(SETTLE)
-		13:
+		15:
 			if name == "deck":
 				_save("09_deck.png")
 				_lose_the_run(director.run)
 				director._route()
 				_next(SETTLE)
-		14:
+		16:
 			if name == "run_end":
 				_save("10_run_end.png")
 				_remove_test_save()
+				_remove_test_settings()
 				quit(0 if failures == 0 else 1)
 				return true
 	return false
@@ -149,6 +164,11 @@ func _boot() -> void:
 	director.next_seed = SEED
 	director.save_path = TEST_SAVE
 	_remove_test_save()
+	# The Director reads the settings in _ready: point it at a file of this
+	# test's own first, with the defaults in the statics.
+	Settings.path = TEST_SETTINGS
+	Settings.reset()
+	_remove_test_settings()
 	root.add_child(director)
 
 
@@ -210,3 +230,8 @@ func _save(name: String) -> void:
 static func _remove_test_save() -> void:
 	if FileAccess.file_exists(TEST_SAVE):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_SAVE))
+
+
+static func _remove_test_settings() -> void:
+	if FileAccess.file_exists(TEST_SETTINGS):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_SETTINGS))

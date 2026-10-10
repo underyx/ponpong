@@ -33,15 +33,25 @@ func _initialize() -> void:
 	print("%-13s %3s %5s %11s %6s %6s %11s %11s  %s" % [
 		"opponent", "to", "win", "pts for/ag", "rally", "shots", "tired y/t", "stam y/t", "target"])
 	var opponents := OpponentLibrary.all_ids()
+	var win_rates: Dictionary = {}
+	var on_target := 0
 	for i in opponents.size():
 		var id: String = opponents[i]
 		var r := _run_opponent(id, i, runs)
-		print("%-13s %3d %5.2f %5.1f/%-5.1f %6.2f %6.1f %5.2f/%-5.2f %5.2f/%-5.2f  %s" % [
+		var status := _target_status(id, r["win_rate"])
+		if status == "":
+			on_target += 1
+		win_rates[id] = r["win_rate"]
+		print("%-13s %3d %5.2f %5.1f/%-5.1f %6.2f %6.1f %5.2f/%-5.2f %5.2f/%-5.2f  %s %s" % [
 			id, r["points_to_win"], r["win_rate"], r["points_for"], r["points_against"], r["rally"],
-			r["shots"], r["tired"][0], r["tired"][1], r["stamina"][0], r["stamina"][1], TARGETS.get(id, "")])
+			r["shots"], r["tired"][0], r["tired"][1], r["stamina"][0], r["stamina"][1], TARGETS.get(id, ""), status])
 		_check(r["win_rate"] >= MIN_WIN_RATE and r["win_rate"] <= MAX_WIN_RATE,
 			"%s: starter win rate %.2f outside [%.2f, %.2f]" % [id, r["win_rate"], MIN_WIN_RATE, MAX_WIN_RATE])
 		_check(r["max_shots"] <= MAX_SHOTS, "%s: a match ran to %d shots" % [id, r["max_shots"]])
+	print("")
+	print("targets (report only): %d of %d opponents inside their band; curve opener %.2f > tier A %.2f > tier B %.2f > bosses %.2f" % [
+		on_target, opponents.size(), win_rates[OpponentLibrary.OPENER], _mean(win_rates, OpponentLibrary.TIER_A),
+		_mean(win_rates, OpponentLibrary.TIER_B), _mean(win_rates, OpponentLibrary.BOSSES)])
 	print("")
 	print("%-14s %6s %7s %7s %7s %7s %9s" % ["card", "played", "tired%", "landed%", "winner%", "ptwon%", "bestland"])
 	for id in CardLibrary.ALL_IDS:
@@ -61,6 +71,26 @@ func _check(ok: bool, what: String) -> void:
 	if not ok:
 		failures += 1
 		print("  FAIL: %s" % what)
+
+
+## "", "LOW" or "HIGH" against the opponent's TARGETS band. Report only.
+func _target_status(id: String, win_rate: float) -> String:
+	var band := String(TARGETS.get(id, "")).split("-")
+	if band.size() != 2:
+		return ""
+	if win_rate < float(band[0]):
+		return "LOW"
+	if win_rate > float(band[1]):
+		return "HIGH"
+	return ""
+
+
+## Mean starter win rate over the opponents in `ids`.
+static func _mean(win_rates: Dictionary, ids: Array) -> float:
+	var total := 0.0
+	for id in ids:
+		total += float(win_rates.get(id, 0.0))
+	return total / float(maxi(1, ids.size()))
 
 
 func _parse_runs() -> int:

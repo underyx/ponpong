@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dnvps470qv5u4"
-path="res://.godot/imported/rally.png-302a3d711b7d23ef957ffee5adfeddd7.ctex"
+uid="uid://dtx7s60tfl53n"
+path="res://.godot/imported/01_menu.png-7d1b999c7236ce30af81ba9bc1c7bf60.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://docs/screenshots/rally.png"
-dest_files=["res://.godot/imported/rally.png-302a3d711b7d23ef957ffee5adfeddd7.ctex"]
+source_file="res://docs/screenshots/01_menu.png"
+dest_files=["res://.godot/imported/01_menu.png-7d1b999c7236ce30af81ba9bc1c7bf60.ctex"]
 
 [params]
 

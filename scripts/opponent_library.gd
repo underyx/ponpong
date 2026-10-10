@@ -18,11 +18,13 @@ const SHADOW := "your_shadow"
 ## Everything about one opponent. Decks are {card id: count} in the order the
 ## cards should be dealt into a deck; AI params feed AIController.choose().
 const PROFILES := {
+	# The tutorial: he feeds lobs to punish and picks loosely (greed 0.3 over
+	# a wide spread), or his all-safe deck beats the starter 58% of the time.
 	"coach_pim": {
 		"name": "Coach Pim",
 		"blurb": "Plays it safe and tells you so.",
-		"deck": {"block": 4, "topspin": 3, "push": 3, "chop": 2, "lob": 2},
-		"ai": {"greed": 0.50, "spread": 4, "aggression": -0.3, "row_bias": 0.0, "edge_bias": 0.0, "thrift": 0.5},
+		"deck": {"block": 3, "topspin": 2, "push": 2, "chop": 2, "lob": 5},
+		"ai": {"greed": 0.30, "spread": 10, "aggression": 0.2, "row_bias": 0.0, "edge_bias": 0.0, "thrift": 0.5},
 		"paddle_color": Color(0.45, 0.55, 0.75),
 		"boss": false,
 	},
@@ -30,14 +32,14 @@ const PROFILES := {
 		"name": "Mara \"Chopper\" Vale",
 		"blurb": "Will not miss. Will not attack. Will wait for you to.",
 		"deck": {"chop": 4, "line_chop": 3, "push": 2, "fish": 2, "block": 2, "heavy_chop": 1},
-		"ai": {"greed": 0.70, "spread": 3, "aggression": -0.5, "row_bias": -0.3, "edge_bias": 0.3, "thrift": 0.6},
+		"ai": {"greed": 0.60, "spread": 4, "aggression": -0.5, "row_bias": -0.3, "edge_bias": 0.3, "thrift": 0.6},
 		"paddle_color": Color(0.25, 0.70, 0.65),
 		"boss": false,
 	},
 	"jax_dunn": {
 		"name": "Jax Dunn",
 		"blurb": "Every ball is a kill ball if you believe.",
-		"deck": {"smash": 3, "drive": 3, "flick": 3, "topspin": 2, "lob": 2, "block": 1},
+		"deck": {"smash": 2, "drive": 3, "flick": 3, "topspin": 2, "lob": 2, "block": 2},
 		"ai": {"greed": 0.60, "spread": 3, "aggression": 0.7, "row_bias": 0.6, "edge_bias": 0.2, "thrift": 0.0},
 		"paddle_color": Color(0.90, 0.25, 0.25),
 		"boss": false,
@@ -45,18 +47,20 @@ const PROFILES := {
 	"dot_and_dash": {
 		"name": "Dot & Dash",
 		"blurb": "Lob, lob, drop. Infuriating.",
-		"deck": {"lob": 3, "fish": 3, "moonball": 2, "drop_shot": 3, "backhand_flip": 3},
-		"ai": {"greed": 0.65, "spread": 3, "aggression": 0.0, "row_bias": 0.3, "edge_bias": 0.5, "thrift": 0.3},
+		"deck": {"lob": 4, "fish": 3, "moonball": 2, "drop_shot": 2, "backhand_flip": 3},
+		"ai": {"greed": 0.50, "spread": 5, "aggression": 0.3, "row_bias": 0.3, "edge_bias": 0.5, "thrift": 0.3},
 		"paddle_color": Color(0.65, 0.85, 0.30),
 		"boss": false,
 	},
-	# One kick serve swapped for a push (the roster was drafted with two of
-	# each): with two the starter won 10% against her, under the 0.20 floor
-	# tests/balance.gd asserts; with one she sits near 0.28.
+	# The spin wall. Drafted as loop x3, topspin x3, banana x2, kick serve x2,
+	# chop x2, push x2, which the starter beat 10% of the time: every ball she
+	# sent fed her own SPIN-strong replies. Her AI knobs do nothing to that,
+	# so three of the spin feeders became lobs and a moonball, HIGH balls the
+	# starter can smash, which puts her near 0.38.
 	"oona_sato": {
 		"name": "Oona Sato",
 		"blurb": "Puts spin on her handshake.",
-		"deck": {"loop": 3, "topspin": 3, "banana_flick": 2, "kick_serve": 1, "chop": 2, "push": 3},
+		"deck": {"loop": 3, "topspin": 1, "banana_flick": 2, "kick_serve": 1, "chop": 2, "push": 1, "lob": 3, "moonball": 1},
 		"ai": {"greed": 0.75, "spread": 2, "aggression": 0.2, "row_bias": 0.0, "edge_bias": 0.4, "thrift": 0.2},
 		"paddle_color": Color(0.60, 0.35, 0.80),
 		"boss": false,
@@ -64,7 +68,7 @@ const PROFILES := {
 	"big_rig": {
 		"name": "Big Rig",
 		"blurb": "A wall that hits back.",
-		"deck": {"counter_drive": 3, "block": 3, "lunge": 2, "angle_drive": 2, "drive": 2, "flat_kill": 1, "breather": 1},
+		"deck": {"counter_drive": 3, "block": 2, "lunge": 1, "angle_drive": 2, "drive": 4, "flat_kill": 1, "breather": 1},
 		"ai": {"greed": 0.70, "spread": 3, "aggression": 0.3, "row_bias": -0.2, "edge_bias": 0.6, "thrift": 0.4},
 		"paddle_color": Color(0.55, 0.58, 0.62),
 		"boss": false,
@@ -73,14 +77,20 @@ const PROFILES := {
 		"name": "Kit Marlow",
 		"blurb": "Goes for the lines every time. Sometimes they are there.",
 		"deck": {"ace_serve": 2, "drop_shot": 2, "angle_drive": 2, "kick_serve": 2, "flick": 2, "lob": 2, "last_gasp": 1, "smash": 1},
-		"ai": {"greed": 0.50, "spread": 5, "aggression": 0.5, "row_bias": 0.0, "edge_bias": 0.8, "thrift": 0.0},
+		"ai": {"greed": 0.60, "spread": 3, "aggression": 0.5, "row_bias": 0.0, "edge_bias": 0.8, "thrift": 0.0},
 		"paddle_color": Color(0.95, 0.80, 0.25),
 		"boss": false,
 	},
+	# Drafted with two each of smash, flat kill, loop, heavy chop, counter
+	# drive and angle drive, she spent 31 stamina over 16 cards, played tired
+	# 15% of the time and lost to the starter 71% of the time. Half the bombs
+	# became drives and a backhand flip: cheaper, and the cards that win the
+	# most points in the report.
 	"ilse_varga": {
 		"name": "Ilse Varga, Champion",
 		"blurb": "Has already beaten you in her head.",
-		"deck": {"smash": 2, "flat_kill": 2, "loop": 2, "heavy_chop": 2, "counter_drive": 2, "angle_drive": 2, "fish": 2, "breather": 1, "power_loop": 1},
+		"deck": {"smash": 1, "flat_kill": 1, "loop": 2, "heavy_chop": 2, "counter_drive": 2, "drive": 2, "backhand_flip": 1,
+			"angle_drive": 1, "fish": 2, "breather": 1, "power_loop": 1},
 		"ai": {"greed": 0.90, "spread": 2, "aggression": 0.3, "row_bias": 0.2, "edge_bias": 0.5, "thrift": 0.4},
 		"paddle_color": Color(0.10, 0.08, 0.12),
 		"boss": true,
@@ -89,7 +99,7 @@ const PROFILES := {
 		"name": "Your Shadow",
 		"blurb": "Plays your deck back at you. Greedy about it, too.",
 		"deck": {},
-		"ai": {"greed": 0.90, "spread": 2, "aggression": 0.3, "row_bias": 0.0, "edge_bias": 0.3, "thrift": 0.4},
+		"ai": {"greed": 0.90, "spread": 2, "aggression": 0.0, "row_bias": 0.0, "edge_bias": 0.3, "thrift": 0.4},
 		"paddle_color": Color(0.35, 0.10, 0.15),
 		"boss": true,
 	},

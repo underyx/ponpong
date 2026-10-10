@@ -1,6 +1,6 @@
 ## The first screen: the orbiting table shows through a light tint, the title
-## sits on top and the buttons below it. Continue only appears when the
-## Director found a save to resume.
+## sits on top and the buttons below it: New Run, Continue, Settings, Quit.
+## Continue only appears when the Director found a save to resume.
 class_name MainMenuScreen
 extends UiScreen
 
@@ -25,6 +25,7 @@ func setup(p_args: Dictionary) -> void:
 	_new_run = _menu_button(box, "New Run", "new_run")
 	if bool(args.get("has_save", false)):
 		_menu_button(box, "Continue", "continue")
+	_menu_button(box, "Settings", "settings")
 	_menu_button(box, "Quit", "quit")
 	add_child(UiKit.center(box))
 	var seed_value := int(args.get("last_seed", -1))
