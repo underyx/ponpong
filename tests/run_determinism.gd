@@ -201,7 +201,13 @@ func _case_invalid_actions() -> void:
 	var run := RunState.new(3)
 	var before := run.to_dict()
 	for action in [{"type": "pick_reward", "index": 0}, {"type": "trim_instead"}, {"type": "remove_card", "index": 0},
-			{"type": "skip_remove"}, {"type": "nonsense"}, {}, {"type": "match_result", "winner": 2, "score": [0, 0]}]:
+			{"type": "skip_remove"}, {"type": "nonsense"}, {}, {"type": "match_result", "winner": 2, "score": [0, 0]},
+			# Wrongly typed fields, as a bad peer or an edited file could send them.
+			{"type": "match_result", "winner": 0, "score": "bad"},
+			{"type": "match_result", "winner": 0, "score": [5, 1], "tired_plays": "zz"},
+			{"type": "match_result", "winner": 0, "score": ["a", {}]},
+			{"type": "match_result", "winner": {}, "score": [5, 1]},
+			{"type": {}, "winner": 0, "score": [5, 1]}]:
 		var events := run.apply(action)
 		_check(events.is_empty(), "invalid action %s returned events" % [action])
 	_check(run.to_dict() == before, "invalid actions changed the run")

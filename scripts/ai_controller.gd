@@ -21,6 +21,9 @@ static func choose(state: MatchState, player: int, params: Dictionary = {}) -> D
 	var p := DEFAULTS.duplicate()
 	p.merge(params, true)
 	var options := _options(state, player, p)
+	if options.is_empty():
+		push_warning("AIController.choose: player %d has no card to play" % player)
+		return {}
 	var pick: Array = options[0]
 	if state.rng.randf() > float(p["greed"]):
 		pick = options[state.rng.randi_range(0, mini(int(p["spread"]) - 1, options.size() - 1))]

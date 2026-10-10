@@ -3,11 +3,18 @@ class_name BallFlight
 extends Node3D
 
 var _tween: Tween
+var _squash_tween: Tween
 
 
+## Kills the flight and the bounce squash. A killed tween never emits
+## `finished`, so a shot() suspended on either is dropped with it, and the
+## ball is left round for whatever places it next.
 func stop() -> void:
 	if _tween and _tween.is_valid():
 		_tween.kill()
+	if _squash_tween and _squash_tween.is_valid():
+		_squash_tween.kill()
+	scale = Vector3.ONE
 
 
 ## Fly from the current position to `to`, peaking `apex` above the higher
@@ -44,10 +51,10 @@ func into_net(net_point: Vector3, speed: float, from_side: int = -1) -> void:
 
 
 func _squash() -> void:
-	var t := create_tween()
-	t.tween_property(self, "scale", Vector3(1.3, 0.7, 1.3), 0.04)
-	t.tween_property(self, "scale", Vector3.ONE, 0.07)
-	await t.finished
+	_squash_tween = create_tween()
+	_squash_tween.tween_property(self, "scale", Vector3(1.3, 0.7, 1.3), 0.04)
+	_squash_tween.tween_property(self, "scale", Vector3.ONE, 0.07)
+	await _squash_tween.finished
 
 
 static func _quadratic(a: Vector3, c: Vector3, b: Vector3, t: float) -> Vector3:

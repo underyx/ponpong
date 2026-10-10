@@ -294,12 +294,35 @@ func _test_invalid_actions() -> void:
 		{"type": "shot", "player": 1, "card": 0, "row": 0, "col": 2},
 		{"type": "shot", "player": 0, "card": 9, "row": 0, "col": 2},
 		{"type": "shot", "player": 0, "card": 0, "row": 5, "col": 2},
+		# Wrongly typed fields, as a bad peer could send them.
+		{"type": "shot", "player": {}, "card": 0, "row": 0, "col": 2},
+		{"type": "shot", "player": 0, "card": [], "row": 0, "col": 2},
+		{"type": "shot", "player": 0, "card": 0, "row": {}, "col": 2},
+		{"type": {}, "player": 0, "card": 0, "row": 0, "col": 2},
 	]
 	for action in actions:
 		_check(s.apply(action).is_empty(), "invalid action %s returned events" % [action])
 	_check(s.to_dict() == before, "invalid actions changed the match")
 	_check(s.phase == MatchState.Phase.RALLY and s.turn == 0, "invalid actions moved the rally on")
+	# An empty hand is an empty choice, not an out-of-bounds read.
+	var hand_backup: Array[Card] = s.players[0].hand.duplicate()
+	s.players[0].hand.clear()
+	_check(AIController.choose(s, 0).is_empty(), "choose() on an empty hand should return {}")
+	s.players[0].hand = hand_backup
 	print("invalid actions: %d rejected, state unchanged" % actions.size())
+	# A plain (untyped) Array of Cards is as good a deck as a typed one, and
+	# the caller's array is copied, not shuffled in place.
+	var untyped: Array = []
+	for c in CardLibrary.starter_deck():
+		untyped.append(c)
+	var order_before: Array = untyped.duplicate()
+	var u := MatchState.new(1, [untyped, untyped], layout)
+	_check(u.players.size() == 2 and u.players[0].deck.size() == 14 and u.players[1].deck.size() == 14,
+		"an untyped deck builds a match with two 14-card decks")
+	_check(untyped == order_before, "the caller's deck was shuffled in place")
+	_check(u.players[0].deck.is_typed(), "the deck copy is a typed array")
+	u.players[0].deck.clear()
+	_check(u.players[1].deck.size() == 14 and untyped.size() == 14, "each player got a copy of their own")
 
 
 # --- 5: keyword unit checks ------------------------------------------------------

@@ -54,7 +54,25 @@ dots, the easier the zone is to miss.
   hint line and the greyed card both warn you about. Smash twice, then play
   cheap until you have caught your breath. Keyword cards (Rest, Sap, Exhaust,
   Steady, Reach, Heavy) say what they do on the card.
-- First to 7. Serve switches every two points.
+- First to 5 against the opener, 7 after that and 9 against the boss. Serve
+  switches every two points.
+
+## How a run plays
+
+New Run from the main menu starts a run of six stages: Coach Pim, two tier-A
+opponents, two tier-B opponents and one of two bosses, drawn from the run's
+seed. Every opponent has a name, a blurb, a deck of their own and an AI
+personality; the VS banner and the reward screen scout the next one. Winning
+a match offers one of three cards (or, after stages 2 and 4, a trim instead).
+Losing one costs a heart and offers a regroup trim before the rematch; losing
+with no hearts left ends the run. Esc or Start pauses, with the deck and a
+two-step Abandon on the pause menu. The run end screen shows the seed, and
+"Retry this seed" replays the same six opponents with the same offers.
+
+Everything plays with the mouse, the keyboard (1-4 picks a card, arrows or
+WASD aim, Enter plays, Backspace un-picks, Q/E cycle cards, Esc pauses) or a
+gamepad (A, d-pad or stick, B, the shoulders, Start). A gold ring marks what
+has focus on every screen.
 
 ## How it is put together
 
@@ -88,8 +106,15 @@ that seat without touching the rules.
 
 | Path | What it is |
 | --- | --- |
-| `scenes/main.tscn` | The whole scene: table, paddles, ball, camera, sky, UI. |
-| `scripts/game.gd` | The presenter on the scene root: feeds actions to the state, plays back events. |
+| `scenes/main.tscn` | The root: the Director, one Match instance and the Screens layer. |
+| `scenes/match.tscn` | The match: table, paddles, ball, camera, sky, HUD. |
+| `scripts/director.gd` | The run loop: owns the RunState, starts matches, shows screens, pauses, saves. |
+| `scripts/game.gd` | The match presenter: feeds actions to the state, plays back events. |
+| `scripts/run_state.gd` | Pure, seeded, serialisable run: opponents, hearts, rewards, trims. |
+| `scripts/opponent_library.gd` | The nine opponents: decks, AI personalities, paddle colours. |
+| `scripts/input_setup.gd` | Registers the keyboard, mouse and gamepad actions at boot. |
+| `scripts/ui/` | `UiKit` (palette and widget builders), `UiScreen` (screen base), `CardView` (one card face). |
+| `scripts/screens/` | Main menu, pause, match end, reward, deck and run end, all code-built. |
 | `scripts/match_state.gd` | Pure, seeded, serialisable match simulation. The thing to run on both peers. |
 | `scripts/ai_controller.gd` | Picks actions for the computer player from the odds. |
 | `scripts/card.gd` | The `Card` resource: power, control, cost, keyword, matchups, flight shape. |
@@ -99,7 +124,7 @@ that seat without touching the rules.
 | `scripts/zone_grid.gd` | Draws a ZoneLayout on the table and tints zones by state. |
 | `scripts/rally_resolver.gd` | Pure logic: card + incoming ball + target zone + opponent lane into odds and an outcome. |
 | `scripts/ball_flight.gd` | Tweened quadratic-curve ball movement, bounce squash, net fault. |
-| `scripts/hand_ui.gd` | Builds the row of card buttons. |
+| `scripts/hand_ui.gd` | The hand: a focusable strip of CardViews. |
 | `shaders/toon.gdshader` | The stylised look. Tweak bands, rim, halftone per material. |
 | `shaders/outline.gdshader` | Inverted-hull outline used as every toon material's next pass. |
 | `shaders/zone.gdshader` | Zone fill, border, risk halftone and highlight tint. |
@@ -108,7 +133,6 @@ that seat without touching the rules.
 
 ## Obvious next steps
 
-- A deck screen between matches (the Slay the Spire layer).
 - Online multiplayer: a RemoteController plus seed and action exchange, see above.
 - A ball trail and paddle impact particles; the shader is ready for more drama.
 
@@ -121,7 +145,8 @@ The scripts under `tests/` and `tools/` run without the editor and are what CI w
 godot --headless --path . -s tests/determinism.gd       # match rules: same seed + actions = same match
 godot --headless --path . -s tests/run_determinism.gd   # run rules, card pool and roster integrity
 godot --headless --path . -s tests/balance.gd -- --runs 40   # starter vs every opponent: report + loose bounds
-godot --headless --fixed-fps 60 --path . -s tests/autoplay.gd   # presenter: plays a full match with random cards
+godot --headless --path . -s tests/screens.gd           # every screen and CardView, built from synthetic args
+godot --headless --fixed-fps 60 --path . -s tests/autoplay.gd   # plays whole runs through the menus, pauses, aims
 sh tools/check_rules_pure.sh                            # rules files never touch global RNG, nodes or time
 xvfb-run godot --path . --rendering-driver opengl3 -s tests/screenshot.gd -- ./shots
 ```

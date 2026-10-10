@@ -112,7 +112,7 @@ func match_config() -> Dictionary:
 ## warning and return nothing, like MatchState.apply().
 func apply(action: Dictionary) -> Array[Dictionary]:
 	var events: Array[Dictionary] = []
-	var type := String(action.get("type", ""))
+	var type := str(action.get("type", ""))
 	match type:
 		"match_result":
 			return _apply_match_result(action)
@@ -144,21 +144,21 @@ func _apply_match_result(action: Dictionary) -> Array[Dictionary]:
 	if phase != Phase.MATCH:
 		push_warning("RunState.apply: match_result outside the match phase")
 		return events
-	var winner := int(action.get("winner", -1))
+	var winner := _int_field(action, "winner")
 	if winner != 0 and winner != 1:
 		push_warning("RunState.apply: bad winner %d" % winner)
 		return events
-	var score: Array = action.get("score", [0, 0])
-	if score.size() != 2:
-		push_warning("RunState.apply: bad score %s" % [score])
+	var score: Variant = action.get("score", [0, 0])
+	var tired: Variant = action.get("tired_plays", [0, 0])
+	if not _is_int_pair(score) or not _is_int_pair(tired):
+		push_warning("RunState.apply: bad score %s or tired_plays %s" % [score, tired])
 		return events
-	var tired: Array = action.get("tired_plays", [0, 0])
-	var my_tired := int(tired[0]) if tired.size() > 0 else 0
+	var my_tired := int(tired[0])
 	history.append({"stage": stage, "opponent": opponent_id(), "won": winner == 0,
 		"score": [int(score[0]), int(score[1])]})
 	stats["points_won"] += int(score[0])
 	stats["points_lost"] += int(score[1])
-	stats["longest_rally"] = maxi(int(stats["longest_rally"]), int(action.get("longest_rally", 0)))
+	stats["longest_rally"] = maxi(int(stats["longest_rally"]), _int_field(action, "longest_rally", 0))
 	stats["tired_plays"] += my_tired
 	if winner == 0:
 		stats["matches_won"] += 1
@@ -191,7 +191,7 @@ func _apply_pick_reward(action: Dictionary) -> Array[Dictionary]:
 	if phase != Phase.REWARD:
 		push_warning("RunState.apply: pick_reward outside the reward phase")
 		return events
-	var index := int(action.get("index", -1))
+	var index := _int_field(action, "index")
 	if index < -1 or index >= offer.size():
 		push_warning("RunState.apply: bad reward index %d" % index)
 		return events
@@ -215,7 +215,7 @@ func _apply_remove_card(action: Dictionary) -> Array[Dictionary]:
 	if deck.size() <= DECK_MIN:
 		push_warning("RunState.apply: the deck is already at its minimum of %d" % DECK_MIN)
 		return events
-	var index := int(action.get("index", -1))
+	var index := _int_field(action, "index")
 	if index < 0 or index >= deck.size():
 		push_warning("RunState.apply: bad deck index %d" % index)
 		return events
@@ -408,6 +408,24 @@ static func from_dict(d: Dictionary) -> RunState:
 
 static func _is_number(v: Variant) -> bool:
 	return typeof(v) == TYPE_INT or typeof(v) == TYPE_FLOAT
+
+
+## An action field as an int: ints, floats and numeric strings convert,
+## anything else (a missing key, a dictionary off the wire) is `fallback`,
+## which the range checks reject. int(Variant) would raise on a Dictionary.
+static func _int_field(action: Dictionary, key: String, fallback: int = -1) -> int:
+	var v: Variant = action.get(key, fallback)
+	match typeof(v):
+		TYPE_INT, TYPE_FLOAT:
+			return int(v)
+		TYPE_STRING:
+			return int(v) if String(v).is_valid_int() else fallback
+	return fallback
+
+
+## A two-entry array of numbers: a score or a tired_plays pair.
+static func _is_int_pair(v: Variant) -> bool:
+	return typeof(v) == TYPE_ARRAY and v.size() == 2 and _is_number(v[0]) and _is_number(v[1])
 
 
 ## An int, a float or a decimal string such as to_dict() writes.

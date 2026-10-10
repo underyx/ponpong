@@ -108,8 +108,12 @@ func _init(p_seed: int, decks: Array, p_layout: ZoneLayout, p_points_to_win: int
 	rng.seed = p_seed
 	for i in 2:
 		var p := PlayerState.new()
-		p.deck = (decks[i] as Array[Card]).duplicate()
-		shuffle(p.deck, rng)
+		# A fresh typed copy, whatever the caller's array type: the caller's
+		# deck is never shuffled in place.
+		var deck: Array[Card] = []
+		deck.assign(decks[i])
+		shuffle(deck, rng)
+		p.deck = deck
 		players.append(p)
 
 
@@ -228,23 +232,23 @@ static func kind_of(outcome: int, tired: bool, on_serve: bool, zone: Zone) -> St
 ## a bad dictionary off the wire can never raise a script error here.
 func apply(action: Dictionary) -> Array[Dictionary]:
 	var events: Array[Dictionary] = []
-	var type := String(action.get("type", ""))
+	var type := str(action.get("type", ""))
 	if type != "shot":
 		push_warning("MatchState.apply: unknown action type '%s'" % type)
 		return events
 	if phase != Phase.RALLY:
 		push_warning("MatchState.apply: no rally in progress")
 		return events
-	var player := int(action.get("player", -1))
+	var player := _int_field(action, "player")
 	if player != turn:
 		push_warning("MatchState.apply: it is player %d's turn, not %d" % [turn, player])
 		return events
 	var me := players[player]
-	var card_index := int(action.get("card", -1))
+	var card_index := _int_field(action, "card")
 	if card_index < 0 or card_index >= me.hand.size():
 		push_warning("MatchState.apply: bad card index %d" % card_index)
 		return events
-	var zone := layout.find(side_of(opponent_of(player)), int(action.get("row", -1)), int(action.get("col", -1)))
+	var zone := layout.find(side_of(opponent_of(player)), _int_field(action, "row"), _int_field(action, "col"))
 	if zone == null:
 		push_warning("MatchState.apply: bad target zone")
 		return events
@@ -304,6 +308,19 @@ func apply(action: Dictionary) -> Array[Dictionary]:
 			me.draw_to(HAND_SIZE, rng)
 			events.append(_turn_event())
 	return events
+
+
+## An action field as an int: ints, floats and numeric strings convert,
+## anything else (a missing key, a dictionary off the wire) is -1, which every
+## range check rejects. int(Variant) would raise on a Dictionary or an Array.
+static func _int_field(action: Dictionary, key: String, fallback: int = -1) -> int:
+	var v: Variant = action.get(key, fallback)
+	match typeof(v):
+		TYPE_INT, TYPE_FLOAT:
+			return int(v)
+		TYPE_STRING:
+			return int(v) if String(v).is_valid_int() else fallback
+	return fallback
 
 
 func _end_point(winner: int) -> Array[Dictionary]:
