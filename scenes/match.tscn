@@ -1,4 +1,4 @@
-[gd_scene load_steps=31 format=3]
+[gd_scene load_steps=44 format=3]
 
 [ext_resource type="Script" path="res://scripts/game.gd" id="1_game"]
 [ext_resource type="Script" path="res://scripts/ball_flight.gd" id="2_ball"]
@@ -8,7 +8,6 @@
 [ext_resource type="Script" path="res://scripts/ball_trail.gd" id="14_trail"]
 [ext_resource type="Script" path="res://scripts/impact_fx.gd" id="15_impact"]
 [ext_resource type="Script" path="res://scripts/visual_fx.gd" id="16_fx"]
-[ext_resource type="Shader" path="res://shaders/toon.gdshader" id="17_toon"]
 [ext_resource type="Material" path="res://materials/toon_table.tres" id="4_table"]
 [ext_resource type="Material" path="res://materials/toon_edge.tres" id="5_edge"]
 [ext_resource type="Material" path="res://materials/toon_net.tres" id="6_net"]
@@ -17,58 +16,55 @@
 [ext_resource type="Material" path="res://materials/toon_paddle_red.tres" id="9_red"]
 [ext_resource type="Material" path="res://materials/toon_paddle_blue.tres" id="10_blue"]
 [ext_resource type="Material" path="res://materials/floor.tres" id="11_floor"]
-
-[sub_resource type="ProceduralSkyMaterial" id="sky_mat"]
-sky_top_color = Color(0.13, 0.11, 0.26, 1)
-sky_horizon_color = Color(0.86, 0.45, 0.40, 1)
-sky_curve = 0.12
-ground_bottom_color = Color(0.08, 0.09, 0.16, 1)
-ground_horizon_color = Color(0.55, 0.30, 0.38, 1)
-sun_angle_max = 20.0
-sun_curve = 0.3
-
-[sub_resource type="Sky" id="sky"]
-sky_material = SubResource("sky_mat")
+[ext_resource type="Material" path="res://materials/toon_apron.tres" id="20_apron"]
+[ext_resource type="Material" path="res://materials/toon_ink.tres" id="21_ink"]
+[ext_resource type="Material" path="res://materials/toon_wood_dark.tres" id="22_wood_dark"]
+[ext_resource type="Material" path="res://materials/toon_rubber_black.tres" id="23_black"]
+[ext_resource type="Material" path="res://materials/toon_seam.tres" id="24_seam"]
+[ext_resource type="Material" path="res://materials/toon_barrier.tres" id="25_barrier"]
+[ext_resource type="Material" path="res://materials/toon_barrier_stripe.tres" id="26_stripe"]
+[ext_resource type="Material" path="res://materials/net_mesh.tres" id="27_net_mesh"]
+[ext_resource type="Material" path="res://materials/vignette.tres" id="28_vignette"]
+[ext_resource type="Mesh" path="res://assets/meshes/paddle.obj" id="30_paddle"]
+[ext_resource type="Mesh" path="res://assets/meshes/net.obj" id="31_net"]
+[ext_resource type="FontVariation" path="res://theme/fonts/display.tres" id="32_display"]
 
 [sub_resource type="Environment" id="env"]
-background_mode = 2
-sky = SubResource("sky")
-ambient_light_source = 3
-ambient_light_sky_contribution = 0.6
-ambient_light_energy = 0.8
+background_mode = 1
+background_color = Color(0.102, 0.094, 0.188, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.58, 0.50, 0.72, 1)
+ambient_light_energy = 0.9
 tonemap_mode = 2
-tonemap_exposure = 1.1
+tonemap_exposure = 1.05
 glow_enabled = true
-glow_intensity = 0.35
-glow_bloom = 0.05
+glow_intensity = 0.3
+glow_bloom = 0.04
 glow_blend_mode = 1
 
 [sub_resource type="PlaneMesh" id="floor_mesh"]
 size = Vector2(40, 40)
 
 [sub_resource type="BoxMesh" id="table_top"]
-size = Vector3(2.74, 0.06, 1.525)
+size = Vector3(2.74, 0.05, 1.525)
+
+[sub_resource type="BoxMesh" id="apron_mesh"]
+size = Vector3(2.78, 0.07, 1.565)
 
 [sub_resource type="BoxMesh" id="edge_long"]
-size = Vector3(2.74, 0.066, 0.03)
+size = Vector3(2.74, 0.054, 0.025)
 
 [sub_resource type="BoxMesh" id="edge_short"]
-size = Vector3(0.03, 0.066, 1.525)
-
-[sub_resource type="BoxMesh" id="net_mesh"]
-size = Vector3(0.015, 0.1525, 1.83)
+size = Vector3(0.025, 0.054, 1.525)
 
 [sub_resource type="BoxMesh" id="leg_mesh"]
-size = Vector3(0.07, 0.73, 0.07)
+size = Vector3(0.055, 0.645, 0.055)
 
-[sub_resource type="CylinderMesh" id="blade_mesh"]
-top_radius = 0.085
-bottom_radius = 0.085
-height = 0.014
-radial_segments = 24
+[sub_resource type="BoxMesh" id="brace_z"]
+size = Vector3(0.045, 0.045, 1.25)
 
-[sub_resource type="BoxMesh" id="handle_mesh"]
-size = Vector3(0.03, 0.11, 0.026)
+[sub_resource type="BoxMesh" id="brace_x"]
+size = Vector3(2.2, 0.04, 0.04)
 
 [sub_resource type="SphereMesh" id="ball_mesh"]
 radius = 0.035
@@ -76,27 +72,26 @@ height = 0.07
 radial_segments = 24
 rings = 12
 
-[sub_resource type="TorusMesh" id="band_mesh"]
-inner_radius = 0.028
-outer_radius = 0.039
+[sub_resource type="TorusMesh" id="seam_mesh"]
+inner_radius = 0.031
+outer_radius = 0.0375
 rings = 32
-ring_segments = 12
+ring_segments = 10
 
-[sub_resource type="ShaderMaterial" id="band_mat"]
-render_priority = 0
-shader = ExtResource("17_toon")
-shader_parameter/albedo = Color(0.50, 0.18, 0.26, 1)
-shader_parameter/shadow_tint = Color(0.28, 0.10, 0.16, 1)
-shader_parameter/bands = 3
-shader_parameter/band_softness = 0.04
-shader_parameter/rim_strength = 0.6
-shader_parameter/rim_power = 3.0
-shader_parameter/rim_color = Color(1, 0.95, 0.85, 1)
-shader_parameter/specular_size = 0.12
-shader_parameter/specular_strength = 0.4
-shader_parameter/halftone = false
-shader_parameter/halftone_scale = 7.0
-shader_parameter/halftone_strength = 0.0
+[sub_resource type="BoxMesh" id="barrier_mesh"]
+size = Vector3(0.05, 0.72, 2.0)
+
+[sub_resource type="BoxMesh" id="barrier_cap"]
+size = Vector3(0.07, 0.06, 2.02)
+
+[sub_resource type="BoxMesh" id="lamp_mesh"]
+size = Vector3(1.6, 0.08, 0.5)
+
+[sub_resource type="CylinderMesh" id="lamp_cord"]
+top_radius = 0.01
+bottom_radius = 0.01
+height = 1.6
+radial_segments = 8
 
 [node name="Match" type="Node3D"]
 script = ExtResource("1_game")
@@ -109,12 +104,21 @@ fov = 44.0
 script = ExtResource("13_camera")
 
 [node name="Sun" type="DirectionalLight3D" parent="World"]
-rotation = Vector3(-0.85, 0.55, 0)
-light_color = Color(1, 0.94, 0.86, 1)
-light_energy = 1.3
+rotation = Vector3(-0.95, 0.5, 0)
+light_color = Color(1, 0.93, 0.82, 1)
+light_energy = 1.25
 shadow_enabled = true
 shadow_bias = 0.04
 directional_shadow_max_distance = 30.0
+
+[node name="Lamp" type="SpotLight3D" parent="World"]
+position = Vector3(0, 3.6, 0)
+rotation = Vector3(-1.5708, 0, 0)
+light_color = Color(1, 0.86, 0.66, 1)
+light_energy = 1.6
+spot_range = 5.0
+spot_angle = 48.0
+spot_angle_attenuation = 1.4
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="World"]
 environment = SubResource("env")
@@ -126,54 +130,328 @@ surface_material_override/0 = ExtResource("11_floor")
 [node name="Table" type="Node3D" parent="World"]
 
 [node name="Top" type="MeshInstance3D" parent="World/Table"]
-position = Vector3(0, 0.73, 0)
+position = Vector3(0, 0.7375, 0)
 mesh = SubResource("table_top")
 surface_material_override/0 = ExtResource("4_table")
 
+[node name="Apron" type="MeshInstance3D" parent="World/Table"]
+position = Vector3(0, 0.68, 0)
+mesh = SubResource("apron_mesh")
+surface_material_override/0 = ExtResource("20_apron")
+
 [node name="EdgeNear" type="MeshInstance3D" parent="World/Table"]
-position = Vector3(0, 0.73, 0.748)
+position = Vector3(0, 0.7375, 0.75)
 mesh = SubResource("edge_long")
 surface_material_override/0 = ExtResource("5_edge")
 
 [node name="EdgeFar" type="MeshInstance3D" parent="World/Table"]
-position = Vector3(0, 0.73, -0.748)
+position = Vector3(0, 0.7375, -0.75)
 mesh = SubResource("edge_long")
 surface_material_override/0 = ExtResource("5_edge")
 
 [node name="EdgeLeft" type="MeshInstance3D" parent="World/Table"]
-position = Vector3(-1.355, 0.73, 0)
+position = Vector3(-1.3575, 0.7375, 0)
 mesh = SubResource("edge_short")
 surface_material_override/0 = ExtResource("5_edge")
 
 [node name="EdgeRight" type="MeshInstance3D" parent="World/Table"]
-position = Vector3(1.355, 0.73, 0)
+position = Vector3(1.3575, 0.7375, 0)
 mesh = SubResource("edge_short")
 surface_material_override/0 = ExtResource("5_edge")
 
 [node name="Net" type="MeshInstance3D" parent="World/Table"]
-position = Vector3(0, 0.836, 0)
-mesh = SubResource("net_mesh")
-surface_material_override/0 = ExtResource("6_net")
+position = Vector3(0, 0.7625, 0)
+mesh = ExtResource("31_net")
+surface_material_override/0 = ExtResource("21_ink")
+surface_material_override/1 = ExtResource("6_net")
+surface_material_override/2 = ExtResource("27_net_mesh")
 
 [node name="Leg1" type="MeshInstance3D" parent="World/Table"]
-position = Vector3(-1.15, 0.365, 0.6)
+position = Vector3(-1.1, 0.3225, 0.58)
 mesh = SubResource("leg_mesh")
-surface_material_override/0 = ExtResource("7_wood")
+surface_material_override/0 = ExtResource("21_ink")
 
 [node name="Leg2" type="MeshInstance3D" parent="World/Table"]
-position = Vector3(-1.15, 0.365, -0.6)
+position = Vector3(-1.1, 0.3225, -0.58)
 mesh = SubResource("leg_mesh")
-surface_material_override/0 = ExtResource("7_wood")
+surface_material_override/0 = ExtResource("21_ink")
 
 [node name="Leg3" type="MeshInstance3D" parent="World/Table"]
-position = Vector3(1.15, 0.365, 0.6)
+position = Vector3(1.1, 0.3225, 0.58)
 mesh = SubResource("leg_mesh")
-surface_material_override/0 = ExtResource("7_wood")
+surface_material_override/0 = ExtResource("21_ink")
 
 [node name="Leg4" type="MeshInstance3D" parent="World/Table"]
-position = Vector3(1.15, 0.365, -0.6)
+position = Vector3(1.1, 0.3225, -0.58)
 mesh = SubResource("leg_mesh")
-surface_material_override/0 = ExtResource("7_wood")
+surface_material_override/0 = ExtResource("21_ink")
+
+[node name="BraceLeft" type="MeshInstance3D" parent="World/Table"]
+position = Vector3(-1.1, 0.14, 0)
+mesh = SubResource("brace_z")
+surface_material_override/0 = ExtResource("21_ink")
+
+[node name="BraceRight" type="MeshInstance3D" parent="World/Table"]
+position = Vector3(1.1, 0.14, 0)
+mesh = SubResource("brace_z")
+surface_material_override/0 = ExtResource("21_ink")
+
+[node name="BraceLong" type="MeshInstance3D" parent="World/Table"]
+position = Vector3(0, 0.14, 0)
+mesh = SubResource("brace_x")
+surface_material_override/0 = ExtResource("21_ink")
+
+[node name="LampShade" type="MeshInstance3D" parent="World"]
+position = Vector3(0, 3.7, 0)
+mesh = SubResource("lamp_mesh")
+surface_material_override/0 = ExtResource("21_ink")
+
+[node name="LampCord" type="MeshInstance3D" parent="World"]
+position = Vector3(0, 4.5, 0)
+mesh = SubResource("lamp_cord")
+surface_material_override/0 = ExtResource("21_ink")
+
+[node name="Barriers" type="Node3D" parent="World"]
+
+[node name="Far1" type="Node3D" parent="World/Barriers"]
+position = Vector3(3.1, 0, -2.15)
+rotation = Vector3(0, 0, 0)
+
+[node name="Panel" type="MeshInstance3D" parent="World/Barriers/Far1"]
+position = Vector3(0, 0.36, 0)
+mesh = SubResource("barrier_mesh")
+surface_material_override/0 = ExtResource("25_barrier")
+
+[node name="Cap" type="MeshInstance3D" parent="World/Barriers/Far1"]
+position = Vector3(0, 0.72, 0)
+mesh = SubResource("barrier_cap")
+surface_material_override/0 = ExtResource("26_stripe")
+
+[node name="Sign" type="Label3D" parent="World/Barriers/Far1"]
+position = Vector3(-0.03, 0.33, 0)
+rotation = Vector3(0, -1.5708, 0)
+pixel_size = 0.0032
+text = "PONPONG"
+font = ExtResource("32_display")
+font_size = 88
+modulate = Color(0.961, 0.933, 0.863, 1)
+outline_size = 0
+
+[node name="Near1" type="Node3D" parent="World/Barriers"]
+position = Vector3(-3.1, 0, -2.15)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="Panel" type="MeshInstance3D" parent="World/Barriers/Near1"]
+position = Vector3(0, 0.36, 0)
+mesh = SubResource("barrier_mesh")
+surface_material_override/0 = ExtResource("25_barrier")
+
+[node name="Cap" type="MeshInstance3D" parent="World/Barriers/Near1"]
+position = Vector3(0, 0.72, 0)
+mesh = SubResource("barrier_cap")
+surface_material_override/0 = ExtResource("26_stripe")
+
+[node name="Sign" type="Label3D" parent="World/Barriers/Near1"]
+position = Vector3(-0.03, 0.33, 0)
+rotation = Vector3(0, -1.5708, 0)
+pixel_size = 0.0032
+text = "PONPONG"
+font = ExtResource("32_display")
+font_size = 88
+modulate = Color(0.961, 0.933, 0.863, 1)
+outline_size = 0
+
+[node name="Far2" type="Node3D" parent="World/Barriers"]
+position = Vector3(3.1, 0, 0)
+rotation = Vector3(0, 0, 0)
+
+[node name="Panel" type="MeshInstance3D" parent="World/Barriers/Far2"]
+position = Vector3(0, 0.36, 0)
+mesh = SubResource("barrier_mesh")
+surface_material_override/0 = ExtResource("25_barrier")
+
+[node name="Cap" type="MeshInstance3D" parent="World/Barriers/Far2"]
+position = Vector3(0, 0.72, 0)
+mesh = SubResource("barrier_cap")
+surface_material_override/0 = ExtResource("26_stripe")
+
+[node name="Sign" type="Label3D" parent="World/Barriers/Far2"]
+position = Vector3(-0.03, 0.33, 0)
+rotation = Vector3(0, -1.5708, 0)
+pixel_size = 0.0032
+text = "PONPONG"
+font = ExtResource("32_display")
+font_size = 88
+modulate = Color(0.961, 0.933, 0.863, 1)
+outline_size = 0
+
+[node name="Near2" type="Node3D" parent="World/Barriers"]
+position = Vector3(-3.1, 0, 0)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="Panel" type="MeshInstance3D" parent="World/Barriers/Near2"]
+position = Vector3(0, 0.36, 0)
+mesh = SubResource("barrier_mesh")
+surface_material_override/0 = ExtResource("25_barrier")
+
+[node name="Cap" type="MeshInstance3D" parent="World/Barriers/Near2"]
+position = Vector3(0, 0.72, 0)
+mesh = SubResource("barrier_cap")
+surface_material_override/0 = ExtResource("26_stripe")
+
+[node name="Sign" type="Label3D" parent="World/Barriers/Near2"]
+position = Vector3(-0.03, 0.33, 0)
+rotation = Vector3(0, -1.5708, 0)
+pixel_size = 0.0032
+text = "PONPONG"
+font = ExtResource("32_display")
+font_size = 88
+modulate = Color(0.961, 0.933, 0.863, 1)
+outline_size = 0
+
+[node name="Far3" type="Node3D" parent="World/Barriers"]
+position = Vector3(3.1, 0, 2.15)
+rotation = Vector3(0, 0, 0)
+
+[node name="Panel" type="MeshInstance3D" parent="World/Barriers/Far3"]
+position = Vector3(0, 0.36, 0)
+mesh = SubResource("barrier_mesh")
+surface_material_override/0 = ExtResource("25_barrier")
+
+[node name="Cap" type="MeshInstance3D" parent="World/Barriers/Far3"]
+position = Vector3(0, 0.72, 0)
+mesh = SubResource("barrier_cap")
+surface_material_override/0 = ExtResource("26_stripe")
+
+[node name="Sign" type="Label3D" parent="World/Barriers/Far3"]
+position = Vector3(-0.03, 0.33, 0)
+rotation = Vector3(0, -1.5708, 0)
+pixel_size = 0.0032
+text = "PONPONG"
+font = ExtResource("32_display")
+font_size = 88
+modulate = Color(0.961, 0.933, 0.863, 1)
+outline_size = 0
+
+[node name="Near3" type="Node3D" parent="World/Barriers"]
+position = Vector3(-3.1, 0, 2.15)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="Panel" type="MeshInstance3D" parent="World/Barriers/Near3"]
+position = Vector3(0, 0.36, 0)
+mesh = SubResource("barrier_mesh")
+surface_material_override/0 = ExtResource("25_barrier")
+
+[node name="Cap" type="MeshInstance3D" parent="World/Barriers/Near3"]
+position = Vector3(0, 0.72, 0)
+mesh = SubResource("barrier_cap")
+surface_material_override/0 = ExtResource("26_stripe")
+
+[node name="Sign" type="Label3D" parent="World/Barriers/Near3"]
+position = Vector3(-0.03, 0.33, 0)
+rotation = Vector3(0, -1.5708, 0)
+pixel_size = 0.0032
+text = "PONPONG"
+font = ExtResource("32_display")
+font_size = 88
+modulate = Color(0.961, 0.933, 0.863, 1)
+outline_size = 0
+
+[node name="Right1" type="Node3D" parent="World/Barriers"]
+position = Vector3(-1.1, 0, 3.3)
+rotation = Vector3(0, -1.5708, 0)
+
+[node name="Panel" type="MeshInstance3D" parent="World/Barriers/Right1"]
+position = Vector3(0, 0.36, 0)
+mesh = SubResource("barrier_mesh")
+surface_material_override/0 = ExtResource("25_barrier")
+
+[node name="Cap" type="MeshInstance3D" parent="World/Barriers/Right1"]
+position = Vector3(0, 0.72, 0)
+mesh = SubResource("barrier_cap")
+surface_material_override/0 = ExtResource("26_stripe")
+
+[node name="Sign" type="Label3D" parent="World/Barriers/Right1"]
+position = Vector3(-0.03, 0.33, 0)
+rotation = Vector3(0, -1.5708, 0)
+pixel_size = 0.0032
+text = "PONPONG"
+font = ExtResource("32_display")
+font_size = 88
+modulate = Color(0.961, 0.933, 0.863, 1)
+outline_size = 0
+
+[node name="Left1" type="Node3D" parent="World/Barriers"]
+position = Vector3(-1.1, 0, -3.3)
+rotation = Vector3(0, 1.5708, 0)
+
+[node name="Panel" type="MeshInstance3D" parent="World/Barriers/Left1"]
+position = Vector3(0, 0.36, 0)
+mesh = SubResource("barrier_mesh")
+surface_material_override/0 = ExtResource("25_barrier")
+
+[node name="Cap" type="MeshInstance3D" parent="World/Barriers/Left1"]
+position = Vector3(0, 0.72, 0)
+mesh = SubResource("barrier_cap")
+surface_material_override/0 = ExtResource("26_stripe")
+
+[node name="Sign" type="Label3D" parent="World/Barriers/Left1"]
+position = Vector3(-0.03, 0.33, 0)
+rotation = Vector3(0, -1.5708, 0)
+pixel_size = 0.0032
+text = "PONPONG"
+font = ExtResource("32_display")
+font_size = 88
+modulate = Color(0.961, 0.933, 0.863, 1)
+outline_size = 0
+
+[node name="Right2" type="Node3D" parent="World/Barriers"]
+position = Vector3(1.1, 0, 3.3)
+rotation = Vector3(0, -1.5708, 0)
+
+[node name="Panel" type="MeshInstance3D" parent="World/Barriers/Right2"]
+position = Vector3(0, 0.36, 0)
+mesh = SubResource("barrier_mesh")
+surface_material_override/0 = ExtResource("25_barrier")
+
+[node name="Cap" type="MeshInstance3D" parent="World/Barriers/Right2"]
+position = Vector3(0, 0.72, 0)
+mesh = SubResource("barrier_cap")
+surface_material_override/0 = ExtResource("26_stripe")
+
+[node name="Sign" type="Label3D" parent="World/Barriers/Right2"]
+position = Vector3(-0.03, 0.33, 0)
+rotation = Vector3(0, -1.5708, 0)
+pixel_size = 0.0032
+text = "PONPONG"
+font = ExtResource("32_display")
+font_size = 88
+modulate = Color(0.961, 0.933, 0.863, 1)
+outline_size = 0
+
+[node name="Left2" type="Node3D" parent="World/Barriers"]
+position = Vector3(1.1, 0, -3.3)
+rotation = Vector3(0, 1.5708, 0)
+
+[node name="Panel" type="MeshInstance3D" parent="World/Barriers/Left2"]
+position = Vector3(0, 0.36, 0)
+mesh = SubResource("barrier_mesh")
+surface_material_override/0 = ExtResource("25_barrier")
+
+[node name="Cap" type="MeshInstance3D" parent="World/Barriers/Left2"]
+position = Vector3(0, 0.72, 0)
+mesh = SubResource("barrier_cap")
+surface_material_override/0 = ExtResource("26_stripe")
+
+[node name="Sign" type="Label3D" parent="World/Barriers/Left2"]
+position = Vector3(-0.03, 0.33, 0)
+rotation = Vector3(0, -1.5708, 0)
+pixel_size = 0.0032
+text = "PONPONG"
+font = ExtResource("32_display")
+font_size = 88
+modulate = Color(0.961, 0.933, 0.863, 1)
+outline_size = 0
 
 [node name="ZoneGrid" type="Node3D" parent="World"]
 script = ExtResource("12_grid")
@@ -183,28 +461,22 @@ position = Vector3(-1.72, 1.0, -0.12)
 rotation = Vector3(0, 0.6, 0.35)
 
 [node name="Blade" type="MeshInstance3D" parent="World/PlayerPaddle"]
-rotation = Vector3(0, 0, 1.5708)
-mesh = SubResource("blade_mesh")
-surface_material_override/0 = ExtResource("9_red")
-
-[node name="Handle" type="MeshInstance3D" parent="World/PlayerPaddle"]
-position = Vector3(0, -0.13, 0)
-mesh = SubResource("handle_mesh")
-surface_material_override/0 = ExtResource("7_wood")
+mesh = ExtResource("30_paddle")
+surface_material_override/0 = ExtResource("23_black")
+surface_material_override/1 = ExtResource("9_red")
+surface_material_override/2 = ExtResource("7_wood")
+surface_material_override/3 = ExtResource("22_wood_dark")
 
 [node name="OpponentPaddle" type="Node3D" parent="World"]
 position = Vector3(1.72, 1.0, 0.12)
 rotation = Vector3(0, 2.54, 0.35)
 
 [node name="Blade" type="MeshInstance3D" parent="World/OpponentPaddle"]
-rotation = Vector3(0, 0, 1.5708)
-mesh = SubResource("blade_mesh")
+mesh = ExtResource("30_paddle")
 surface_material_override/0 = ExtResource("10_blue")
-
-[node name="Handle" type="MeshInstance3D" parent="World/OpponentPaddle"]
-position = Vector3(0, -0.13, 0)
-mesh = SubResource("handle_mesh")
-surface_material_override/0 = ExtResource("7_wood")
+surface_material_override/1 = ExtResource("23_black")
+surface_material_override/2 = ExtResource("7_wood")
+surface_material_override/3 = ExtResource("22_wood_dark")
 
 [node name="Ball" type="MeshInstance3D" parent="World"]
 position = Vector3(-1.5, 0.98, 0)
@@ -212,10 +484,11 @@ mesh = SubResource("ball_mesh")
 surface_material_override/0 = ExtResource("8_ball")
 script = ExtResource("2_ball")
 
-[node name="Band" type="MeshInstance3D" parent="World/Ball"]
-mesh = SubResource("band_mesh")
+[node name="Seam" type="MeshInstance3D" parent="World/Ball"]
+rotation = Vector3(0.55, 0, 0.4)
+mesh = SubResource("seam_mesh")
 cast_shadow = 0
-surface_material_override/0 = SubResource("band_mat")
+surface_material_override/0 = ExtResource("24_seam")
 
 [node name="Trail" type="MeshInstance3D" parent="World"]
 script = ExtResource("14_trail")
@@ -227,12 +500,28 @@ pixel_size = 0.004
 billboard = 1
 no_depth_test = true
 text = "WINNER"
+font = ExtResource("32_display")
 font_size = 140
 outline_size = 28
-outline_modulate = Color(0.09, 0.07, 0.14, 1)
+modulate = Color(1, 0.784, 0.239, 1)
+outline_modulate = Color(0.102, 0.094, 0.188, 1)
 
 [node name="ImpactFx" type="Node3D" parent="World"]
 script = ExtResource("15_impact")
+
+[node name="Vignette" type="CanvasLayer" parent="."]
+layer = 0
+
+[node name="Veil" type="ColorRect" parent="Vignette"]
+material = ExtResource("28_vignette")
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(1, 1, 1, 1)
 
 [node name="UI" type="CanvasLayer" parent="."]
 
@@ -245,72 +534,18 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
-[node name="Margin" type="MarginContainer" parent="UI/Root"]
+[node name="Hand" type="HBoxContainer" parent="UI/Root"]
+unique_name_in_owner = true
 layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
 anchor_bottom = 1.0
+offset_bottom = -12.0
 grow_horizontal = 2
-grow_vertical = 2
+grow_vertical = 0
 mouse_filter = 2
-theme_override_constants/margin_left = 24
-theme_override_constants/margin_top = 20
-theme_override_constants/margin_right = 24
-theme_override_constants/margin_bottom = 12
-
-[node name="VBox" type="VBoxContainer" parent="UI/Root/Margin"]
-layout_mode = 2
-mouse_filter = 2
-theme_override_constants/separation = 6
-
-[node name="ScoreLabel" type="Label" parent="UI/Root/Margin/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_colors/font_color = Color(0.98, 0.96, 0.9, 1)
-theme_override_colors/font_outline_color = Color(0.09, 0.07, 0.14, 1)
-theme_override_constants/outline_size = 8
-theme_override_font_sizes/font_size = 36
-text = "YOU 0   -   0 THEM"
-horizontal_alignment = 1
-
-[node name="IncomingLabel" type="Label" parent="UI/Root/Margin/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_colors/font_color = Color(1, 0.85, 0.45, 1)
-theme_override_colors/font_outline_color = Color(0.09, 0.07, 0.14, 1)
-theme_override_constants/outline_size = 6
-theme_override_font_sizes/font_size = 24
-text = "Incoming: Serve"
-horizontal_alignment = 1
-
-[node name="HintLabel" type="Label" parent="UI/Root/Margin/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_colors/font_color = Color(0.85, 0.85, 0.92, 1)
-theme_override_colors/font_outline_color = Color(0.09, 0.07, 0.14, 1)
-theme_override_constants/outline_size = 5
-theme_override_font_sizes/font_size = 16
-text = "You serve. Anything goes."
-horizontal_alignment = 1
-
-[node name="Spacer" type="Control" parent="UI/Root/Margin/VBox"]
-layout_mode = 2
-size_flags_vertical = 3
-mouse_filter = 2
-
-[node name="LogLabel" type="Label" parent="UI/Root/Margin/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_colors/font_color = Color(0.98, 0.96, 0.9, 1)
-theme_override_colors/font_outline_color = Color(0.09, 0.07, 0.14, 1)
-theme_override_constants/outline_size = 6
-theme_override_font_sizes/font_size = 20
-text = "New match."
-horizontal_alignment = 1
-
-[node name="Hand" type="HBoxContainer" parent="UI/Root/Margin/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
 theme_override_constants/separation = 14
 alignment = 1
 script = ExtResource("3_hand")

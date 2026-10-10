@@ -50,15 +50,18 @@ const VS_BANNER_TIME := 1.6
 const MATCH_OVER_HOLD := 1.2
 const LOCAL := 0
 const REMOTE := 1
-## The stamina pips squeeze in under the score; these keep the top block
-## from growing down onto the far end of the table.
-const HUD_TOP_MARGIN := 8
-const HUD_SEPARATION := 4
-const SCORE_FONT_SIZE := 32
-const HUD_EDGE := Vector2(24, 20)
+## The HUD keeps the middle of the screen for the table: the score plate
+## sits top centre, the situation (stage, hearts, the incoming ball and the
+## hint) in a column on the left, the opponent and the commentary in one on
+## the right, the hand along the bottom.
+const SCORE_FONT_SIZE := 38
+const HUD_EDGE := Vector2(22, 18)
+## Width of the two side columns' plates.
+const SIDE_COLUMN_WIDTH := 300
 ## Where the zone cursor starts: the short middle of their half.
 const CURSOR_START := Vector2i(0, 2)
-const THEIR_PIP_COLOR := Color(0.55, 0.80, 1.0)
+const MY_PIP_COLOR := Palette.ORANGE
+const THEIR_PIP_COLOR := Palette.BLUE_LIGHT
 const HINT_KEYBOARD := "1-4 card  ·  arrows aim\nEnter play  ·  Esc pause"
 const HINT_GAMEPAD := "A pick  ·  d-pad aim\nA play  ·  B back  ·  Start pause"
 const RALLY_MILESTONES := [4, 7, 10, 15]
@@ -70,8 +73,8 @@ const IDLE_BALL_POSITION := Vector3(-1.1, ZoneLayout.TOP_Y + 0.035, 0.15)
 ## A callout holds this long, then fades out over CALLOUT_FADE.
 const CALLOUT_HOLD := 0.9
 const CALLOUT_FADE := 0.25
-const CALLOUT_GOOD := Color(1.0, 0.85, 0.3)
-const CALLOUT_BAD := Color(0.95, 0.4, 0.4)
+const CALLOUT_GOOD := Palette.YELLOW
+const CALLOUT_BAD := Palette.PINK
 ## Shots at least this powerful freeze time for a beat at contact...
 const HIT_STOP_POWER := 0.8
 ## ... and this powerful punch the camera, by -2 - 4 * power degrees of fov.
@@ -91,6 +94,9 @@ const THINK_JITTER := 0.02
 ## and towards the camera's right, clear of the HUD block the far paddle sits
 ## under and of the ball waiting at the blade.
 const THINK_OFFSET := Vector3(-0.3, 0.08, 0.26)
+## Where the camera looks: a little toward the player's end, so the table
+## sits high enough in the frame for the hand to clear its near edge.
+const LOOK_AT := Vector3(-0.70, ZoneLayout.TOP_Y, 0.0)
 
 @onready var ball: BallFlight = $World/Ball
 @onready var grid: ZoneGrid = $World/ZoneGrid
@@ -98,28 +104,38 @@ const THINK_OFFSET := Vector3(-0.3, 0.08, 0.26)
 @onready var camera: Camera3D = $World/Camera3D
 @onready var callout: Label3D = $World/Callout
 @onready var hud_root: Control = $UI/Root
-@onready var score_label: Label = %ScoreLabel
-@onready var incoming_label: Label = %IncomingLabel
-@onready var hint_label: Label = %HintLabel
-@onready var log_label: Label = %LogLabel
 @onready var hand_ui: HandUI = %Hand
 
-## Code-built HUD, see _build_hud().
+## Code-built HUD, see _build_hud(). The labels the tests and VisualFx read
+## are also exposed as %ScoreLabel, %IncomingLabel, %HintLabel, %LogLabel,
+## %MyPips, %TheirPips and %RallyLabel.
+var score_label: Label
+var incoming_label: Label
+var hint_label: Label
+var log_label: Label
 var stamina_row: HBoxContainer
 var hearts_row: HBoxContainer
 var stage_label: Label
 var opponent_label: Label
-var boss_label: Label
+var their_name_label: Label
+var to_win_label: Label
+var boss_label: Control
 var versus_banner: Control
 var rally_label: Label
 var controls_hint: Label
+## The left column's plate with the incoming ball and the hint, shown only
+## while there is something to say; the right column's commentary likewise.
+var situation_plate: PanelContainer
+var log_plate: PanelContainer
 
 var layout := ZoneLayout.new()
 var state: MatchState
 ## Personality of the computer seat; empty means AIController.DEFAULTS.
 var ai_params: Dictionary = {}
 var opponent_name := "Them"
-## What the score line calls them: "YOU 3  -  2 JAX DUNN".
+## The opponent's library id, for the emblem; "" shows none.
+var opponent_id := ""
+## What the score plate calls them: "YOU  3  -  2  JAX DUNN".
 var short_name := "THEM"
 var points_to_win := MatchState.DEFAULT_POINTS_TO_WIN
 
@@ -144,6 +160,8 @@ var _generation := 0
 var _my_pips: HBoxContainer
 var _their_pips: HBoxContainer
 var _banner_labels: Dictionary = {}
+var _banner_emblem: TextureRect
+var _emblem: TextureRect
 var _banner_tween: Tween
 var _callout_tween: Tween
 var _blade_material: ShaderMaterial
@@ -161,7 +179,7 @@ func _ready() -> void:
 	# Idempotent, so under the Director this is a no-op; standalone it is
 	# what gives the hand its 1-4, Q/E and Backspace keys.
 	InputSetup.register()
-	camera.look_at(Vector3(-0.45, 0.76, 0.0))
+	camera.look_at(LOOK_AT)
 	_base_fov = camera.fov
 	grid.build(layout)
 	for p in paddles:
@@ -186,13 +204,16 @@ func _process(delta: float) -> void:
 	if _thinking:
 		paddles[REMOTE].rotation.z = _paddle_rest[REMOTE].z + sin(_time * 40.0) * THINK_JITTER
 		_think_label.position = paddles[REMOTE].position + THINK_OFFSET
+	situation_plate.visible = incoming_label.text != "" or hint_label.text != ""
+	log_plate.visible = log_label.text != ""
 
 
 # --- public API for the Director ------------------------------------------------
 
 ## Begins a match. config: {"seed", "decks": [Array[Card], Array[Card]],
-## "points_to_win", "ai", "opponent_name", "blurb", "paddle_color", "boss",
-## "hearts", "stage", "stages"}. Any match in progress stops at once.
+## "points_to_win", "ai", "opponent_id", "opponent_name", "blurb",
+## "paddle_color", "boss", "hearts", "stage", "stages"}. Any match in
+## progress stops at once.
 func start(config: Dictionary) -> void:
 	_generation += 1
 	var gen := _generation
@@ -203,11 +224,16 @@ func start(config: Dictionary) -> void:
 	points_to_win = state.points_to_win
 	ai_params = config.get("ai", {})
 	opponent_name = String(config.get("opponent_name", "Them"))
+	opponent_id = String(config.get("opponent_id", ""))
 	short_name = short_name_of(opponent_name)
 	var boss := bool(config.get("boss", false))
 	_set_paddle_color(config.get("paddle_color", null))
 	opponent_label.text = opponent_name
+	their_name_label.text = short_name
+	to_win_label.text = "first to %d" % points_to_win
 	boss_label.visible = boss
+	_emblem.texture = UiKit.emblem_texture(opponent_id)
+	_emblem.visible = _emblem.texture != null
 	stage_label.text = "STAGE %d of %d" % [int(config.get("stage", 0)) + 1, int(config.get("stages", RunState.STAGES))]
 	UiKit.set_pips(hearts_row, int(config.get("hearts", RunState.HEARTS)))
 	hud_root.visible = true
@@ -286,6 +312,7 @@ func _start_standalone() -> void:
 		"decks": [CardLibrary.starter_deck(), CardLibrary.from_ids(OpponentLibrary.deck_ids(OpponentLibrary.OPENER))],
 		"points_to_win": MatchState.DEFAULT_POINTS_TO_WIN,
 		"ai": pim["ai"],
+		"opponent_id": OpponentLibrary.OPENER,
 		"opponent_name": pim["name"],
 		"blurb": pim["blurb"],
 		"paddle_color": pim["paddle_color"],
@@ -321,58 +348,124 @@ func _reset_presentation() -> void:
 
 # --- HUD ------------------------------------------------------------------------
 
-## Adds everything the scene file does not carry: stamina pips under the
-## score, stage and hearts top-left, the opponent top-right, the controls hint
-## bottom-right, the rally label and the VS banner.
+## Builds the HUD around the hand the scene file carries. Top centre, the
+## score plate: YOU, the score, their name, and the stamina bolts under
+## each. Top left, the stage and hearts, then the situation plate with the
+## incoming ball and the hint. Top right, the opponent's nameplate with
+## their emblem, then the commentary. Bottom right, the controls hint. And
+## over the table's left edge, the rally label; over everything, the VS
+## banner.
 func _build_hud() -> void:
-	var vbox: Control = score_label.get_parent()
-	vbox.add_theme_constant_override("separation", HUD_SEPARATION)
-	vbox.get_parent().add_theme_constant_override("margin_top", int(HUD_TOP_MARGIN))
-	score_label.add_theme_font_size_override("font_size", SCORE_FONT_SIZE)
-
-	stamina_row = UiKit.hbox(28)
+	# --- top centre: the score ---
+	var score_box := UiKit.vbox(0)
+	score_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	var score_row := UiKit.hbox(16)
+	score_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	var you_label := UiKit.display("YOU", 18, MY_PIP_COLOR)
+	you_label.size_flags_vertical = Control.SIZE_SHRINK_END
+	score_row.add_child(you_label)
+	score_label = UiKit.display("0  -  0", SCORE_FONT_SIZE, Palette.PAPER)
+	score_label.custom_minimum_size = Vector2(120, 0)
+	score_row.add_child(score_label)
+	their_name_label = UiKit.display("THEM", 18, THEIR_PIP_COLOR)
+	their_name_label.size_flags_vertical = Control.SIZE_SHRINK_END
+	score_row.add_child(their_name_label)
+	score_box.add_child(score_row)
+	stamina_row = UiKit.hbox(22)
 	stamina_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	_my_pips = UiKit.pips(MatchState.STAMINA_MAX, MatchState.STAMINA_MAX, UiKit.GOLD, 14)
-	_their_pips = UiKit.pips(MatchState.STAMINA_MAX, MatchState.STAMINA_MAX, THEIR_PIP_COLOR, 14)
-	stamina_row.add_child(_pip_group("you", _my_pips, false))
-	stamina_row.add_child(_pip_group("them", _their_pips, true))
-	vbox.add_child(stamina_row)
-	vbox.move_child(stamina_row, score_label.get_index() + 1)
+	_my_pips = UiKit.bolts(MatchState.STAMINA_MAX, MatchState.STAMINA_MAX, MY_PIP_COLOR, 16)
+	_their_pips = UiKit.bolts(MatchState.STAMINA_MAX, MatchState.STAMINA_MAX, THEIR_PIP_COLOR, 16)
+	stamina_row.add_child(_my_pips)
+	stamina_row.add_child(UiKit.icon(UiKit.ICON_BALL, 9, Palette.PAPER_DIM))
+	stamina_row.add_child(_their_pips)
+	score_box.add_child(stamina_row)
+	var score_plate := UiKit.plate(Vector2(24, 6))
+	score_plate.add_child(score_box)
+	_pin_top_center(score_plate)
+	hud_root.add_child(score_plate)
+	_expose(score_plate, "ScorePlate")
+	_expose(score_label, "ScoreLabel")
 	_expose(stamina_row, "StaminaRow")
 	_expose(_my_pips, "MyPips")
 	_expose(_their_pips, "TheirPips")
 
-	var corner := UiKit.vbox(4)
-	stage_label = UiKit.label("STAGE 1 of 6", 16, UiKit.MUTED)
-	stage_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	corner.add_child(stage_label)
-	hearts_row = UiKit.pips(RunState.HEARTS, RunState.HEARTS, UiKit.DANGER, 16)
-	hearts_row.add_child(UiKit.label("hearts", 14, UiKit.MUTED))
-	corner.add_child(hearts_row)
-	corner.position = HUD_EDGE
-	hud_root.add_child(corner)
-	_expose(corner, "HeartsRow")
+	# --- top left: the stage, the hearts, the situation ---
+	var left := UiKit.vbox(8)
+	left.name = "LeftColumn"
+	left.position = HUD_EDGE
+	var stage_plate := UiKit.plate(Vector2(12, 4))
+	stage_plate.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	var stage_row := UiKit.hbox(10)
+	stage_label = UiKit.display("STAGE 1 of 6", 17, Palette.PAPER)
+	stage_row.add_child(stage_label)
+	hearts_row = UiKit.hearts(RunState.HEARTS, RunState.HEARTS, 18)
+	stage_row.add_child(hearts_row)
+	stage_plate.add_child(stage_row)
+	left.add_child(stage_plate)
+	situation_plate = UiKit.plate(Vector2(14, 10))
+	situation_plate.custom_minimum_size = Vector2(SIDE_COLUMN_WIDTH, 0)
+	var situation := UiKit.vbox(2)
+	situation.add_child(_column_caption("INCOMING"))
+	incoming_label = UiKit.display("", 22, Palette.PAPER)
+	_column_text(incoming_label)
+	situation.add_child(incoming_label)
+	hint_label = UiKit.text("", 14, Palette.PAPER)
+	_column_text(hint_label)
+	situation.add_child(hint_label)
+	situation_plate.add_child(situation)
+	left.add_child(situation_plate)
+	hud_root.add_child(left)
+	_expose(hearts_row, "HeartsRow")
+	_expose(situation_plate, "SituationPlate")
+	_expose(incoming_label, "IncomingLabel")
+	_expose(hint_label, "HintLabel")
 
+	# --- top right: the opponent, the commentary ---
+	var right := UiKit.vbox(8)
+	right.name = "RightColumn"
+	var who_plate := UiKit.plate(Vector2(14, 6))
+	var who_row := UiKit.hbox(12)
 	var who := UiKit.vbox(0)
-	who.name = "OpponentBox"
-	opponent_label = UiKit.label("Them", 22)
+	who.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	opponent_label = UiKit.display("Them", 22, Palette.PAPER)
 	opponent_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	who.add_child(opponent_label)
-	boss_label = UiKit.label("BOSS", 16, UiKit.DANGER)
-	boss_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	var tags := UiKit.hbox(8)
+	tags.alignment = BoxContainer.ALIGNMENT_END
+	boss_label = UiKit.chip("BOSS", null, Palette.PINK, Palette.PAPER, 11)
+	boss_label.name = "BossTag"
 	boss_label.visible = false
-	who.add_child(boss_label)
-	_pin_right(who, true)
-	hud_root.add_child(who)
+	tags.add_child(boss_label)
+	to_win_label = UiKit.caption("first to 7", 12, Palette.PAPER_DIM)
+	to_win_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	tags.add_child(to_win_label)
+	who.add_child(tags)
+	who_row.add_child(who)
+	_emblem = UiKit.emblem("", 46)
+	_emblem.visible = false
+	who_row.add_child(_emblem)
+	who_plate.add_child(who_row)
+	right.add_child(who_plate)
+	log_plate = UiKit.plate(Vector2(14, 8), 0.8)
+	log_plate.custom_minimum_size = Vector2(SIDE_COLUMN_WIDTH, 0)
+	log_label = UiKit.text("", 14, Palette.PAPER)
+	_column_text(log_label)
+	log_plate.add_child(log_label)
+	right.add_child(log_plate)
+	_pin_right(right, true)
+	hud_root.add_child(right)
 	_expose(opponent_label, "OpponentLabel")
+	_expose(log_label, "LogLabel")
 
-	controls_hint = UiKit.label(HINT_KEYBOARD, 14, UiKit.MUTED)
+	# --- bottom right: the controls ---
+	controls_hint = UiKit.label(HINT_KEYBOARD, 13, Palette.PAPER_DIM)
 	controls_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_pin_right(controls_hint, false)
 	hud_root.add_child(controls_hint)
 	_expose(controls_hint, "ControlsHint")
 
-	rally_label = UiKit.label("", 28, UiKit.GOLD)
+	# --- the rally label, over the table's left edge ---
+	rally_label = UiKit.title("", 30, Palette.YELLOW)
 	rally_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	rally_label.anchor_top = 0.5
 	rally_label.anchor_bottom = 0.5
@@ -387,8 +480,23 @@ func _build_hud() -> void:
 	versus_banner = _build_banner()
 	hud_root.add_child(versus_banner)
 	_expose(versus_banner, "VersusBanner")
-	for node in [stamina_row, corner, who, versus_banner]:
+	for node in [score_plate, left, right, controls_hint, rally_label, versus_banner]:
 		_let_mouse_through(node)
+
+
+## The small orange heading of a side column plate.
+static func _column_caption(text: String) -> Label:
+	var l := UiKit.caption(text, 11, Palette.ORANGE)
+	l.add_theme_font_override("font", Palette.body_bold)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	return l
+
+
+## Side column text runs left and wraps inside the plate.
+static func _column_text(l: Label) -> void:
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 
 ## Gives a code-built HUD node a scene-unique name, so %Name reaches it from
@@ -400,15 +508,15 @@ func _expose(node: Node, unique_name: String) -> void:
 	node.unique_name_in_owner = true
 
 
-func _pip_group(caption: String, pips: HBoxContainer, label_last: bool) -> HBoxContainer:
-	var group := UiKit.hbox(8)
-	var caption_label := UiKit.label(caption, 14, UiKit.MUTED)
-	if not label_last:
-		group.add_child(caption_label)
-	group.add_child(pips)
-	if label_last:
-		group.add_child(caption_label)
-	return group
+## Anchors a control to the top edge, centred, growing both ways.
+func _pin_top_center(c: Control) -> void:
+	c.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	c.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	c.grow_vertical = Control.GROW_DIRECTION_END
+	c.offset_left = 0.0
+	c.offset_right = 0.0
+	c.offset_top = HUD_EDGE.y
+	c.offset_bottom = HUD_EDGE.y
 
 
 ## Anchors a control to the right edge, at the top or the bottom, growing
@@ -427,22 +535,35 @@ func _pin_right(c: Control, top: bool) -> void:
 		c.offset_bottom = -HUD_EDGE.y * 0.6
 
 
-## "STAGE 3 of 6 / JAX DUNN / blurb / first to 7" on a skewed backplate,
-## centred, hidden until start() slides it in.
+## The VS banner: the opponent's emblem beside "STAGE 3 of 6 / JAX DUNN /
+## BOSS / blurb / first to 7" on a skewed paper plate, centred, hidden
+## until start() slides it in.
 func _build_banner() -> Control:
-	var box := UiKit.vbox(6)
-	_banner_labels["stage"] = UiKit.label("STAGE 1 of 6", 20, UiKit.MUTED)
-	_banner_labels["name"] = UiKit.title("THEM", 56)
-	_banner_labels["blurb"] = UiKit.label("", 20)
-	_banner_labels["boss"] = UiKit.label("BOSS", 22, UiKit.DANGER)
-	_banner_labels["to"] = UiKit.label("first to 7", 22, UiKit.GOLD)
-	for key in ["stage", "name", "boss", "blurb", "to"]:
+	var row := UiKit.hbox(18)
+	_banner_emblem = UiKit.emblem("", 84)
+	_banner_emblem.visible = false
+	row.add_child(_banner_emblem)
+	var box := UiKit.vbox(2)
+	_banner_labels["stage"] = _column_caption("STAGE 1 of 6")
+	_banner_labels["name"] = UiKit.heading("THEM", 46)
+	_banner_labels["name"].horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_banner_labels["blurb"] = UiKit.text("", 17)
+	_banner_labels["blurb"].horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	var tags := UiKit.hbox(10)
+	_banner_labels["boss"] = UiKit.chip("BOSS", null, Palette.PINK, Palette.PAPER, 12)
+	_banner_labels["to"] = UiKit.strong("first to 7", 16, Palette.ORANGE)
+	_banner_labels["to"].size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	tags.add_child(_banner_labels["boss"])
+	tags.add_child(_banner_labels["to"])
+	for key in ["stage", "name", "blurb"]:
 		box.add_child(_banner_labels[key])
+	box.add_child(tags)
+	row.add_child(box)
 	var panel := UiKit.panel()
-	var plate := panel.get_theme_stylebox("panel") as StyleBoxFlat
-	if plate != null:
-		plate.skew = Vector2(BANNER_SKEW, 0.0)
-	panel.add_child(box)
+	var plate := UiKit.panel_style(Palette.PAPER, 22.0)
+	plate.skew = Vector2(BANNER_SKEW, 0.0)
+	panel.add_theme_stylebox_override("panel", plate)
+	panel.add_child(row)
 	var center := UiKit.center(panel)
 	center.name = "VersusBanner"
 	center.visible = false
@@ -457,12 +578,13 @@ func _build_think_label() -> void:
 	_think_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	_think_label.no_depth_test = true
 	_think_label.pixel_size = 0.004
+	_think_label.font = Palette.display
 	_think_label.font_size = 128
 	_think_label.outline_size = 24
 	# The dots of "..." sit on the baseline: anchor the label there.
 	_think_label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
-	_think_label.modulate = UiKit.TEXT
-	_think_label.outline_modulate = UiKit.OUTLINE
+	_think_label.modulate = Palette.PAPER
+	_think_label.outline_modulate = Palette.INK
 	_think_label.visible = false
 	$World.add_child(_think_label)
 
@@ -490,6 +612,8 @@ func _show_versus(config: Dictionary, boss: bool) -> void:
 	_banner_labels["blurb"].text = String(config.get("blurb", ""))
 	_banner_labels["boss"].visible = boss
 	_banner_labels["to"].text = "first to %d" % points_to_win
+	_banner_emblem.texture = UiKit.emblem_texture(opponent_id)
+	_banner_emblem.visible = _banner_emblem.texture != null
 	var width := get_viewport().get_visible_rect().size.x
 	versus_banner.visible = true
 	versus_banner.modulate.a = 0.0
@@ -724,8 +848,8 @@ func _open_input() -> void:
 	var their_col := state.players[REMOTE].col
 	grid.set_covered(1, [their_col - 1, their_col, their_col + 1])
 	var where := "" if state.incoming_zone == null else " to your %s" % state.incoming_zone.label()
-	var heavy := ", and it is heavy" if state.incoming_heavy else ""
-	incoming_label.text = "Incoming: %s%s%s" % [BallType.label(state.incoming_type), where, heavy]
+	var heavy := ", heavy" if state.incoming_heavy else ""
+	incoming_label.text = "%s%s%s" % [BallType.label(state.incoming_type), where, heavy]
 	hint_label.text = BallType.hint(state.incoming_type) + "  Pick a card, then aim at a zone on their half."
 	hand_ui.show_hand(state.players[LOCAL].hand, state.incoming_type, state.players[LOCAL].stamina)
 	hand_ui.set_enabled(true)
@@ -911,8 +1035,10 @@ func _submit(action: Dictionary) -> void:
 	selected_index = -1
 	hand_ui.set_enabled(false)
 	_set_hover(null)
-	# The log line narrates the shot in flight; the hint has nothing to add.
+	# The log line narrates the shot in flight; the situation plate has
+	# nothing to add until the next ball is on its way.
 	hint_label.text = ""
+	incoming_label.text = ""
 	_enqueue(state.apply(action))
 
 
@@ -992,7 +1118,7 @@ func _set_stamina(values: Array) -> void:
 ## The score comes from the point event, never from the state: the state has
 ## already scored a rally while the ball is still in the air.
 func _refresh_score(score: Array) -> void:
-	score_label.text = "YOU %d   -   %d %s" % [score[0], score[1], short_name]
+	score_label.text = "%d  -  %d" % [score[0], score[1]]
 	_refresh_stamina()
 
 

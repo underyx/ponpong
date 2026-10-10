@@ -10,13 +10,17 @@ extends Node3D
 enum State { IDLE, HOVER, TARGET, INCOMING }
 
 const LIFT := 0.003
-const FILL_BOTTOM := Color(0.12, 0.47, 0.38)
-const FILL_TOP := Color(0.13, 0.42, 0.44)
+## The table's blue, a shade lighter on the player's half so the near end
+## reads as "yours" at a glance.
+const FILL_BOTTOM := Color(0.23, 0.49, 0.78)
+const FILL_TOP := Palette.BLUE
+## A lighter blue under the cursor (with yellow brackets), orange where the
+## shot is going, pink where theirs is coming.
 const HIGHLIGHT := {
-	State.IDLE: Color(1.0, 0.8, 0.3),
-	State.HOVER: Color(1.0, 0.92, 0.55),
-	State.TARGET: Color(1.0, 0.55, 0.2),
-	State.INCOMING: Color(0.55, 0.8, 1.0),
+	State.IDLE: Palette.BLUE_LIGHT,
+	State.HOVER: Palette.BLUE_LIGHT,
+	State.TARGET: Palette.ORANGE,
+	State.INCOMING: Palette.PINK,
 }
 ## Highlight strength at rest, by state.
 const STRENGTH := {
@@ -162,6 +166,7 @@ func _apply(z: Zone) -> void:
 	var mat: ShaderMaterial = _materials[z]
 	mat.set_shader_parameter("highlight", maxf(float(STRENGTH[state]), float(_boost.get(z, 0.0))))
 	mat.set_shader_parameter("highlight_color", HIGHLIGHT[state])
-	mat.set_shader_parameter("dim", 0.45 if _covered[z] else 0.0)
+	mat.set_shader_parameter("dim", 1.0 if _covered[z] else 0.0)
+	mat.set_shader_parameter("bracket", 1.0 if state == State.HOVER else 0.0)
 	if state == State.HOVER:
 		_animated[z] = true

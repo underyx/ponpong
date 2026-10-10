@@ -1,0 +1,10 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3]
+
+[ext_resource type="Shader" path="res://shaders/net.gdshader" id="1"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1")
+shader_parameter/thread_color = Color(0.86, 0.82, 0.76, 1)
+shader_parameter/cell = 0.024
+shader_parameter/thread = 0.22

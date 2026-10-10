@@ -1,0 +1,25 @@
+[remap]
+
+importer="wavefront_obj"
+importer_version=1
+type="Mesh"
+uid="uid://cm6iaiona4eb0"
+path="res://.godot/imported/net.obj-5d3cf464b15ca175548a27186aabc664.mesh"
+
+[deps]
+
+files=["res://.godot/imported/net.obj-5d3cf464b15ca175548a27186aabc664.mesh"]
+
+source_file="res://assets/meshes/net.obj"
+dest_files=["res://.godot/imported/net.obj-5d3cf464b15ca175548a27186aabc664.mesh", "res://.godot/imported/net.obj-5d3cf464b15ca175548a27186aabc664.mesh"]
+
+[params]
+
+generate_tangents=true
+generate_lods=true
+generate_shadow_mesh=true
+generate_lightmap_uv2=false
+generate_lightmap_uv2_texel_size=0.2
+scale_mesh=Vector3(1, 1, 1)
+offset_mesh=Vector3(0, 0, 0)
+force_disable_mesh_compression=false
