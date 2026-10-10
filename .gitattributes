@@ -1,0 +1,9 @@
+# Keep the checkout LF everywhere so sh tools/check_rules_pure.sh runs under
+# Git Bash on Windows, where core.autocrlf would otherwise rewrite it to CRLF.
+* text=auto
+*.sh text eol=lf
+*.gd text eol=lf
+*.tscn text eol=lf
+*.godot text eol=lf
+*.gdshader text eol=lf
+*.png binary

@@ -4,13 +4,19 @@ extends HBoxContainer
 
 signal card_chosen(index: int)
 
-const CARD_SIZE := Vector2(176, 118)
+const CARD_SIZE := Vector2(176, 132)
+const TEXT_COLOR := Color(0.08, 0.07, 0.12)
+## Over-budget cards are still playable, just washed out.
+const TIRED_GREY := Color(0.58, 0.58, 0.60)
+const TIRED_MODULATE := Color(0.72, 0.72, 0.72)
 
 
-func show_hand(cards: Array[Card], incoming: int) -> void:
+## `stamina` is what the player has right now; cards that cost more are drawn
+## tired. Pass -1 when there is no stamina to compare against (deck views).
+func show_hand(cards: Array[Card], incoming: int, stamina: int = -1) -> void:
 	clear()
 	for i in cards.size():
-		add_child(_make_button(cards[i], i, incoming))
+		add_child(_make_button(cards[i], i, incoming, stamina))
 
 
 func clear() -> void:
@@ -24,22 +30,35 @@ func set_enabled(enabled: bool) -> void:
 			child.disabled = not enabled
 
 
-func _make_button(card: Card, index: int, incoming: int) -> Button:
+static func is_tired(card: Card, stamina: int) -> bool:
+	return stamina >= 0 and card.cost > stamina
+
+
+## "●●●" for cost 3, "○" for a free card.
+static func cost_dots(cost: int) -> String:
+	return "●".repeat(cost) if cost > 0 else "○"
+
+
+func _make_button(card: Card, index: int, incoming: int, stamina: int) -> Button:
+	var tired := is_tired(card, stamina)
+	var color := card.color.lerp(TIRED_GREY, 0.7) if tired else card.color
 	var button := Button.new()
 	button.toggle_mode = true
 	button.custom_minimum_size = CARD_SIZE
 	button.focus_mode = Control.FOCUS_NONE
-	button.text = _card_text(card, incoming)
+	button.text = _card_text(card, incoming, stamina)
 	button.tooltip_text = card.flavor
 	button.add_theme_font_size_override("font_size", 15)
-	button.add_theme_color_override("font_color", Color(0.08, 0.07, 0.12))
-	button.add_theme_color_override("font_hover_color", Color(0.08, 0.07, 0.12))
-	button.add_theme_color_override("font_pressed_color", Color(0.08, 0.07, 0.12))
-	button.add_theme_color_override("font_disabled_color", Color(0.08, 0.07, 0.12, 0.5))
-	button.add_theme_stylebox_override("normal", _style(card.color, false))
-	button.add_theme_stylebox_override("hover", _style(card.color.lightened(0.15), true))
-	button.add_theme_stylebox_override("pressed", _style(card.color.darkened(0.15), true))
-	button.add_theme_stylebox_override("disabled", _style(card.color.darkened(0.35), false))
+	button.add_theme_color_override("font_color", TEXT_COLOR)
+	button.add_theme_color_override("font_hover_color", TEXT_COLOR)
+	button.add_theme_color_override("font_pressed_color", TEXT_COLOR)
+	button.add_theme_color_override("font_disabled_color", Color(TEXT_COLOR, 0.5))
+	button.add_theme_stylebox_override("normal", _style(color, false))
+	button.add_theme_stylebox_override("hover", _style(color.lightened(0.15), true))
+	button.add_theme_stylebox_override("pressed", _style(color.darkened(0.15), true))
+	button.add_theme_stylebox_override("disabled", _style(color.darkened(0.35), false))
+	if tired:
+		button.modulate = TIRED_MODULATE
 	button.pressed.connect(func() -> void:
 		set_selected(index)
 		card_chosen.emit(index))
@@ -54,8 +73,9 @@ func set_selected(index: int) -> void:
 		i += 1
 
 
-func _card_text(card: Card, incoming: int) -> String:
+func _card_text(card: Card, incoming: int, stamina: int) -> String:
 	var lines: Array[String] = [card.title]
+	lines.append(cost_dots(card.cost) + ("   TIRED" if is_tired(card, stamina) else ""))
 	lines.append("power %d  control %d" % [roundi(card.power * 10.0), roundi(card.control * 10.0)])
 	lines.append("sends: %s" % BallType.label(card.produces))
 	if card.is_strong_vs(incoming):
@@ -64,6 +84,7 @@ func _card_text(card: Card, incoming: int) -> String:
 		lines.append("weak vs %s" % BallType.label(incoming))
 	else:
 		lines.append(" ")
+	lines.append(card.keyword_text() if card.keyword != "" else " ")
 	return "\n".join(lines)
 
 

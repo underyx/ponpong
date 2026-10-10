@@ -19,6 +19,10 @@ const COVER_CENTER := -0.18
 const COVER_NEAR := -0.05
 const COVER_OPEN := 0.12
 const EDGE_PAYOFF := 1.5
+## Quality lost when a card is played with less stamina than it costs.
+const TIRED_PENALTY := 0.25
+## A `steady` card pays this fraction of the target zone's risk.
+const STEADY_FACTOR := 0.5
 
 
 ## Everything that goes into one shot, before the dice.
@@ -28,6 +32,8 @@ class Shot:
 	var incoming_risk: float
 	var target: Zone
 	var opponent_col: int
+	## Set when the card costs more than the player has: the soft stamina rule.
+	var tired := false
 
 	func quality() -> float:
 		var q := card.control
@@ -35,8 +41,11 @@ class Shot:
 			q += STRONG_BONUS
 		if card.is_weak_vs(incoming_type):
 			q -= WEAK_PENALTY
-		q -= target.risk
-		q -= incoming_risk * REACH_PENALTY
+		q -= target.risk * (STEADY_FACTOR if card.keyword == "steady" else 1.0)
+		if card.keyword != "reach":
+			q -= incoming_risk * REACH_PENALTY
+		if tired:
+			q -= TIRED_PENALTY
 		return q
 
 	func pressure() -> float:

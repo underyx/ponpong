@@ -47,6 +47,13 @@ dots, the easier the zone is to miss.
   middle or just out from an edge. Otherwise the ball lands there and pressure
   decides whether it is a clean winner or comes back. If it comes back, the
   opponent's reply, and where it lands on your half, is your next incoming.
+- Every card costs stamina (the dots on it; a hollow dot is free). You start
+  with 6, get 1 back at the start of every point, and the score line shows
+  both players' pools. You may always play a card you cannot afford: it empties
+  your stamina and the shot is **tired**, a flat hit to its control that the
+  hint line and the greyed card both warn you about. Smash twice, then play
+  cheap until you have caught your breath. Keyword cards (Rest, Sap, Exhaust,
+  Steady, Reach, Heavy) say what they do on the card.
 - First to 7. Serve switches every two points.
 
 ## How it is put together
@@ -85,8 +92,8 @@ that seat without touching the rules.
 | `scripts/game.gd` | The presenter on the scene root: feeds actions to the state, plays back events. |
 | `scripts/match_state.gd` | Pure, seeded, serialisable match simulation. The thing to run on both peers. |
 | `scripts/ai_controller.gd` | Picks actions for the computer player from the odds. |
-| `scripts/card.gd` | The `Card` resource: power, control, matchups, flight shape. |
-| `scripts/card_library.gd` | The starter deck and card ids. Add cards here. |
+| `scripts/card.gd` | The `Card` resource: power, control, cost, keyword, matchups, flight shape. |
+| `scripts/card_library.gd` | All 25 cards, the starter deck and the id lookups. Add cards here. |
 | `scripts/zone_layout.gd` | The 2x5 zones per half as data: geometry, risk and reward. |
 | `scripts/zone.gd` | One zone: side, row, lane, rect, risk, reward. |
 | `scripts/zone_grid.gd` | Draws a ZoneLayout on the table and tints zones by state. |
@@ -103,15 +110,18 @@ that seat without touching the rules.
 
 - A deck screen between matches (the Slay the Spire layer).
 - Online multiplayer: a RemoteController plus seed and action exchange, see above.
-- Energy or stamina so Smash cannot be spammed.
 - A ball trail and paddle impact particles; the shader is ready for more drama.
 
 ## Headless checks
 
-Both scripts under `tests/` run without the editor and are what CI would call:
+The scripts under `tests/` and `tools/` run without the editor and are what CI would call
+(`--fixed-fps 60` is a test flag only: it drops real-time sync so a whole match takes a second):
 
 ```sh
-godot --headless --path . -s tests/determinism.gd   # rules only: same seed + actions = same match
-godot --headless --path . -s tests/autoplay.gd      # presenter: plays a full match with random cards
+godot --headless --path . -s tests/determinism.gd       # match rules: same seed + actions = same match
+godot --headless --path . -s tests/run_determinism.gd   # run rules, card pool and roster integrity
+godot --headless --path . -s tests/balance.gd -- --runs 40   # starter vs every opponent: report + loose bounds
+godot --headless --fixed-fps 60 --path . -s tests/autoplay.gd   # presenter: plays a full match with random cards
+sh tools/check_rules_pure.sh                            # rules files never touch global RNG, nodes or time
 xvfb-run godot --path . --rendering-driver opengl3 -s tests/screenshot.gd -- ./shots
 ```
