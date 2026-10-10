@@ -28,6 +28,10 @@ func _process(_delta: float) -> bool:
 		var pick: int = randi() % game.hand.size()
 		print("  [%4d] incoming=%s hand=%s -> play %s" % [frames, BallType.label(game.incoming), hand_names, game.hand[pick].title])
 		game._on_card_chosen(pick)
+		var zones: Array = game.grid.zones_on(1)
+		var zone = zones[randi() % zones.size()]
+		print("         aim at %s (lands %d%%)" % [zone.label(), roundi(RallyResolver.odds(game._build_shot(game.hand[pick], zone))["land"] * 100.0)])
+		game.choose_zone(zone)
 		plays += 1
 	if game.phase == game.Phase.MATCH_OVER and plays > 0:
 		print("autoplay: match over after %d plays, %d frames. %s" % [plays, frames, game.score_label.text])

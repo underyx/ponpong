@@ -3,6 +3,7 @@
 [ext_resource type="Script" path="res://scripts/game.gd" id="1_game"]
 [ext_resource type="Script" path="res://scripts/ball_flight.gd" id="2_ball"]
 [ext_resource type="Script" path="res://scripts/hand_ui.gd" id="3_hand"]
+[ext_resource type="Script" path="res://scripts/zone_grid.gd" id="12_grid"]
 [ext_resource type="Material" path="res://materials/toon_table.tres" id="4_table"]
 [ext_resource type="Material" path="res://materials/toon_edge.tres" id="5_edge"]
 [ext_resource type="Material" path="res://materials/toon_net.tres" id="6_net"]
@@ -49,9 +50,6 @@ size = Vector3(2.74, 0.066, 0.03)
 [sub_resource type="BoxMesh" id="edge_short"]
 size = Vector3(0.03, 0.066, 1.525)
 
-[sub_resource type="BoxMesh" id="centre_line"]
-size = Vector3(2.74, 0.066, 0.012)
-
 [sub_resource type="BoxMesh" id="net_mesh"]
 size = Vector3(0.015, 0.1525, 1.83)
 
@@ -79,8 +77,8 @@ script = ExtResource("1_game")
 [node name="World" type="Node3D" parent="."]
 
 [node name="Camera3D" type="Camera3D" parent="World"]
-position = Vector3(-3.4, 2.3, 2.9)
-fov = 48.0
+position = Vector3(-3.5, 4.4, 0)
+fov = 44.0
 
 [node name="Sun" type="DirectionalLight3D" parent="World"]
 rotation = Vector3(-0.85, 0.55, 0)
@@ -124,11 +122,6 @@ position = Vector3(1.355, 0.73, 0)
 mesh = SubResource("edge_short")
 surface_material_override/0 = ExtResource("5_edge")
 
-[node name="CentreLine" type="MeshInstance3D" parent="World/Table"]
-position = Vector3(0, 0.73, 0)
-mesh = SubResource("centre_line")
-surface_material_override/0 = ExtResource("5_edge")
-
 [node name="Net" type="MeshInstance3D" parent="World/Table"]
 position = Vector3(0, 0.836, 0)
 mesh = SubResource("net_mesh")
@@ -153,6 +146,9 @@ surface_material_override/0 = ExtResource("7_wood")
 position = Vector3(1.15, 0.365, -0.6)
 mesh = SubResource("leg_mesh")
 surface_material_override/0 = ExtResource("7_wood")
+
+[node name="ZoneGrid" type="Node3D" parent="World"]
+script = ExtResource("12_grid")
 
 [node name="PlayerPaddle" type="Node3D" parent="World"]
 position = Vector3(-1.72, 1.0, -0.12)
@@ -189,7 +185,7 @@ surface_material_override/0 = ExtResource("8_ball")
 script = ExtResource("2_ball")
 
 [node name="Callout" type="Label3D" parent="World"]
-position = Vector3(0, 1.55, 0)
+position = Vector3(0, 1.3, 0)
 visible = false
 pixel_size = 0.004
 billboard = 1
@@ -221,7 +217,7 @@ mouse_filter = 2
 theme_override_constants/margin_left = 24
 theme_override_constants/margin_top = 20
 theme_override_constants/margin_right = 24
-theme_override_constants/margin_bottom = 20
+theme_override_constants/margin_bottom = 12
 
 [node name="VBox" type="VBoxContainer" parent="UI/Root/Margin"]
 layout_mode = 2

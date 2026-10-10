@@ -21,12 +21,16 @@ func _process(_delta: float) -> bool:
 		_save("01_hand.png")
 	if frames == 41 and game.phase == game.Phase.PLAYER_TURN:
 		game._on_card_chosen(0)
-	if frames == 52:
-		_save("02_shot.png")
+		game._set_hover(game.grid.zone(1, 1, 3))
+	if frames == 44:
+		_save("02_aim.png")
+		game.choose_zone(game.grid.zone(1, 1, 3))
+	if frames == 50:
+		_save("03_shot.png")
 	if frames == 70:
-		_save("03_bounce.png")
+		_save("04_bounce.png")
 	if frames == 90:
-		_save("04_reply.png")
+		_save("05_reply.png")
 		return true
 	return false
 

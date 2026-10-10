@@ -11,10 +11,10 @@ static func topspin() -> Card:
 
 
 static func smash() -> Card:
-	return Card.make("Smash", "Put it away. Wild against anything but a lob.",
+	return Card.make("Smash", "Put it away. Wild against anything but a lob. Loves the deep row.",
 		0.90, 0.45, BallType.FAST,
 		[BallType.HIGH], [BallType.FAST, BallType.SPIN],
-		Color(0.90, 0.30, 0.30), 0.18, 1.7)
+		Color(0.90, 0.30, 0.30), 0.18, 1.7, 1)
 
 
 static func chop() -> Card:
@@ -32,24 +32,24 @@ static func block() -> Card:
 
 
 static func lob() -> Card:
-	return Card.make("Lob", "Sky it. Buys time, hands them a smash.",
+	return Card.make("Lob", "Sky it deep. Buys time, hands them a smash.",
 		0.10, 0.90, BallType.HIGH,
 		[BallType.FAST], [BallType.HIGH],
-		Color(0.60, 0.85, 0.60), 1.20, 0.6)
+		Color(0.60, 0.85, 0.60), 1.20, 0.6, 1)
 
 
 static func drop_shot() -> Card:
-	return Card.make("Drop Shot", "Dink it just over the net. Cruel after a lob.",
+	return Card.make("Drop Shot", "Dink it just over the net. Short row only, really.",
 		0.70, 0.55, BallType.FLAT,
 		[BallType.HIGH, BallType.SPIN], [BallType.FAST],
-		Color(0.85, 0.65, 0.95), 0.22, 0.75)
+		Color(0.85, 0.65, 0.95), 0.22, 0.75, 0)
 
 
 static func flick() -> Card:
 	return Card.make("Flick", "A wristy, flat jab. Decent against everything, great against nothing.",
 		0.50, 0.65, BallType.FAST,
 		[], [],
-		Color(0.95, 0.85, 0.40), 0.25, 1.3)
+		Color(0.95, 0.85, 0.40), 0.25, 1.3, 1)
 
 
 ## A 14-card starter deck with sensible ratios.

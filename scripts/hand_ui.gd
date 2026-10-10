@@ -4,7 +4,7 @@ extends HBoxContainer
 
 signal card_chosen(index: int)
 
-const CARD_SIZE := Vector2(176, 132)
+const CARD_SIZE := Vector2(176, 118)
 
 
 func show_hand(cards: Array[Card], incoming: int) -> void:
@@ -26,6 +26,7 @@ func set_enabled(enabled: bool) -> void:
 
 func _make_button(card: Card, index: int, incoming: int) -> Button:
 	var button := Button.new()
+	button.toggle_mode = true
 	button.custom_minimum_size = CARD_SIZE
 	button.focus_mode = Control.FOCUS_NONE
 	button.text = _card_text(card, incoming)
@@ -39,8 +40,18 @@ func _make_button(card: Card, index: int, incoming: int) -> Button:
 	button.add_theme_stylebox_override("hover", _style(card.color.lightened(0.15), true))
 	button.add_theme_stylebox_override("pressed", _style(card.color.darkened(0.15), true))
 	button.add_theme_stylebox_override("disabled", _style(card.color.darkened(0.35), false))
-	button.pressed.connect(func() -> void: card_chosen.emit(index))
+	button.pressed.connect(func() -> void:
+		set_selected(index)
+		card_chosen.emit(index))
 	return button
+
+
+func set_selected(index: int) -> void:
+	var i := 0
+	for child in get_children():
+		if child is Button:
+			child.set_pressed_no_signal(i == index)
+		i += 1
 
 
 func _card_text(card: Card, incoming: int) -> String:
