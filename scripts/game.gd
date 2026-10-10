@@ -9,6 +9,11 @@
 ## presenting. Run on its own (F6 on match.tscn) it starts a quick match
 ## against the opener and rematches when it ends.
 ##
+## Every feel moment (a swing, a landing, a point, a stamina change) goes out
+## as the `fx` signal; the sound and the particle nodes subscribe to it and
+## this script never calls them. The camera rig is reached only through
+## has_method(), so the scene runs with a plain Camera3D too.
+##
 ## Player 0 is always drawn at the bottom. For online play, swap AIController
 ## for a controller that receives the other peer's actions, and send player 0's
 ## actions out from _submit().
@@ -17,6 +22,19 @@ extends Node3D
 
 ## Fired after the YOU WIN / YOU LOSE callout has shown for MATCH_OVER_HOLD.
 signal match_finished(winner: int, score: Array, longest_rally: int, stats: Array)
+## A feel moment. Names and data, in match order:
+##   match_start  {opponent: String, boss: bool}
+##   point_start  {server: int, score: Array, stamina: Array}
+##   card_select  {index: int}          card_deselect {}
+##   zone_hover   {zone: Zone}          zone_commit   {zone: Zone}
+##   swing        {player, power, color, tired}            at paddle contact
+##   landed       {player, outcome, kind, zone, pos, color, tired}
+##                                      after the flight, before the callout
+##   point        {winner, score, points_to_win, rally_length}
+##   rally        {length}              at RALLY_MILESTONES
+##   stamina      {player, value, delta}   whenever a shown value changes
+##   match_over   {won: bool, score: Array}
+signal fx(name: String, data: Dictionary)
 
 ## HAND: a card is being picked (focus walks the hand). AIM: a card is chosen
 ## and the zone cursor is live. NONE: the local player cannot act.
@@ -49,6 +67,30 @@ const RALLY_MILESTONES := [4, 7, 10, 15]
 const SHORT_NAME_MAX := 11
 ## Where the ball rests while the table is a backdrop.
 const IDLE_BALL_POSITION := Vector3(-1.1, ZoneLayout.TOP_Y + 0.035, 0.15)
+## A callout holds this long, then fades out over CALLOUT_FADE.
+const CALLOUT_HOLD := 0.9
+const CALLOUT_FADE := 0.25
+const CALLOUT_GOOD := Color(1.0, 0.85, 0.3)
+const CALLOUT_BAD := Color(0.95, 0.4, 0.4)
+## Shots at least this powerful freeze time for a beat at contact...
+const HIT_STOP_POWER := 0.8
+## ... and this powerful punch the camera, by -2 - 4 * power degrees of fov.
+const PUNCH_POWER := 0.6
+## The VS banner slides in from this far right (a fraction of the screen)
+## and out to the left, with a skewed backplate.
+const BANNER_SLIDE_FROM := 0.6
+const BANNER_SLIDE_TO := 0.25
+const BANNER_SLIDE_IN := 0.3
+const BANNER_SLIDE_OUT := 0.25
+const BANNER_SKEW := 0.12
+## Idle life: the paddles breathe, and the opponent's twitches while the AI
+## thinks under a "..." label.
+const PADDLE_BOB := 0.01
+const THINK_JITTER := 0.02
+## Where the "..." floats relative to the opponent's paddle: a little above it
+## and towards the camera's right, clear of the HUD block the far paddle sits
+## under and of the ball waiting at the blade.
+const THINK_OFFSET := Vector3(-0.3, 0.08, 0.26)
 
 @onready var ball: BallFlight = $World/Ball
 @onready var grid: ZoneGrid = $World/ZoneGrid
@@ -103,9 +145,16 @@ var _my_pips: HBoxContainer
 var _their_pips: HBoxContainer
 var _banner_labels: Dictionary = {}
 var _banner_tween: Tween
+var _callout_tween: Tween
 var _blade_material: ShaderMaterial
 var _paddle_rest: Array[Vector3] = []
+var _base_fov := 44.0
 var _standalone := false
+## Seconds since _ready, for the idle motion.
+var _time := 0.0
+## True while the AI is taking its think time.
+var _thinking := false
+var _think_label: Label3D
 
 
 func _ready() -> void:
@@ -113,10 +162,12 @@ func _ready() -> void:
 	# what gives the hand its 1-4, Q/E and Backspace keys.
 	InputSetup.register()
 	camera.look_at(Vector3(-0.45, 0.76, 0.0))
+	_base_fov = camera.fov
 	grid.build(layout)
 	for p in paddles:
 		_paddle_rest.append(p.rotation)
 	_build_hud()
+	_build_think_label()
 	hand_ui.card_chosen.connect(_on_card_chosen)
 	callout.visible = false
 	_standalone = get_parent() == get_tree().root or get_tree().current_scene == self
@@ -124,6 +175,17 @@ func _ready() -> void:
 		match_finished.connect(func(_winner: int, _score: Array, _rally: int, _stats: Array) -> void:
 			_start_standalone.call_deferred())
 		_start_standalone()
+
+
+## Idle life: the paddles breathe, the opponent's twitches while the AI
+## thinks, and the "..." label floats above it. Pausable with the match.
+func _process(delta: float) -> void:
+	_time += delta
+	for p in 2:
+		paddles[p].position.y = PADDLE_Y + sin(_time * 2.0 + p * 2.1) * PADDLE_BOB
+	if _thinking:
+		paddles[REMOTE].rotation.z = _paddle_rest[REMOTE].z + sin(_time * 40.0) * THINK_JITTER
+		_think_label.position = paddles[REMOTE].position + THINK_OFFSET
 
 
 # --- public API for the Director ------------------------------------------------
@@ -152,6 +214,8 @@ func start(config: Dictionary) -> void:
 	_shown_stamina = [MatchState.STAMINA_MAX, MatchState.STAMINA_MAX]
 	_refresh_score([0, 0])
 	_log("%s. First to %d." % [opponent_name, points_to_win])
+	_set_orbit(false)
+	fx.emit("match_start", {"opponent": opponent_name, "boss": boss})
 	await _show_versus(config, boss)
 	if gen != _generation:
 		return
@@ -165,7 +229,15 @@ func set_idle(p_idle: bool) -> void:
 		_generation += 1
 		_reset_presentation()
 		ball.global_position = IDLE_BALL_POSITION
+		_set_orbit(true)
 	hud_root.visible = not p_idle
+
+
+## The camera rig (M3) orbits the table while the menus are up. A plain
+## Camera3D has no orbit and is left alone.
+func _set_orbit(on: bool) -> void:
+	if camera.has_method("orbit"):
+		camera.call("orbit", on)
 
 
 ## Shows or hides the match HUD. The Director hides it under every screen
@@ -227,7 +299,7 @@ func _start_standalone() -> void:
 ## Stops whatever the previous match was doing and clears the HUD.
 func _reset_presentation() -> void:
 	ball.stop()
-	callout.visible = false
+	_hide_callout()
 	_queue.clear()
 	_pumping = false
 	input_open = false
@@ -241,6 +313,7 @@ func _reset_presentation() -> void:
 	hint_label.text = ""
 	rally_label.visible = false
 	_hide_banner()
+	_set_thinking(false)
 	for p in 2:
 		paddles[p].rotation = _paddle_rest[p]
 		_slide_paddle(p, MatchState.HOME_COL, true)
@@ -266,6 +339,8 @@ func _build_hud() -> void:
 	vbox.add_child(stamina_row)
 	vbox.move_child(stamina_row, score_label.get_index() + 1)
 	_expose(stamina_row, "StaminaRow")
+	_expose(_my_pips, "MyPips")
+	_expose(_their_pips, "TheirPips")
 
 	var corner := UiKit.vbox(4)
 	stage_label = UiKit.label("STAGE 1 of 6", 16, UiKit.MUTED)
@@ -352,7 +427,8 @@ func _pin_right(c: Control, top: bool) -> void:
 		c.offset_bottom = -HUD_EDGE.y * 0.6
 
 
-## "STAGE 3 of 6 / JAX DUNN / blurb / first to 7", centred, hidden until start().
+## "STAGE 3 of 6 / JAX DUNN / blurb / first to 7" on a skewed backplate,
+## centred, hidden until start() slides it in.
 func _build_banner() -> Control:
 	var box := UiKit.vbox(6)
 	_banner_labels["stage"] = UiKit.label("STAGE 1 of 6", 20, UiKit.MUTED)
@@ -363,11 +439,41 @@ func _build_banner() -> Control:
 	for key in ["stage", "name", "boss", "blurb", "to"]:
 		box.add_child(_banner_labels[key])
 	var panel := UiKit.panel()
+	var plate := panel.get_theme_stylebox("panel") as StyleBoxFlat
+	if plate != null:
+		plate.skew = Vector2(BANNER_SKEW, 0.0)
 	panel.add_child(box)
 	var center := UiKit.center(panel)
 	center.name = "VersusBanner"
 	center.visible = false
 	return center
+
+
+## The "..." that hovers over the opponent's paddle while the AI thinks.
+func _build_think_label() -> void:
+	_think_label = Label3D.new()
+	_think_label.name = "ThinkLabel"
+	_think_label.text = "..."
+	_think_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_think_label.no_depth_test = true
+	_think_label.pixel_size = 0.004
+	_think_label.font_size = 128
+	_think_label.outline_size = 24
+	# The dots of "..." sit on the baseline: anchor the label there.
+	_think_label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	_think_label.modulate = UiKit.TEXT
+	_think_label.outline_modulate = UiKit.OUTLINE
+	_think_label.visible = false
+	$World.add_child(_think_label)
+
+
+func _set_thinking(on: bool) -> void:
+	_thinking = on
+	_think_label.visible = on
+	if on:
+		_think_label.position = paddles[REMOTE].position + THINK_OFFSET
+	else:
+		paddles[REMOTE].rotation.z = _paddle_rest[REMOTE].z
 
 
 ## HUD containers must not swallow clicks meant for the table.
@@ -384,20 +490,27 @@ func _show_versus(config: Dictionary, boss: bool) -> void:
 	_banner_labels["blurb"].text = String(config.get("blurb", ""))
 	_banner_labels["boss"].visible = boss
 	_banner_labels["to"].text = "first to %d" % points_to_win
+	var width := get_viewport().get_visible_rect().size.x
 	versus_banner.visible = true
 	versus_banner.modulate.a = 0.0
+	versus_banner.position = Vector2(width * BANNER_SLIDE_FROM, 0.0)
 	_banner_tween = create_tween()
-	_banner_tween.tween_property(versus_banner, "modulate:a", 1.0, 0.2)
-	_banner_tween.tween_interval(VS_BANNER_TIME - 0.45)
-	_banner_tween.tween_property(versus_banner, "modulate:a", 0.0, 0.25)
+	_banner_tween.tween_property(versus_banner, "position:x", 0.0, BANNER_SLIDE_IN) \
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_banner_tween.parallel().tween_property(versus_banner, "modulate:a", 1.0, BANNER_SLIDE_IN * 0.6)
+	_banner_tween.tween_interval(VS_BANNER_TIME - BANNER_SLIDE_IN - BANNER_SLIDE_OUT)
+	_banner_tween.tween_property(versus_banner, "position:x", -width * BANNER_SLIDE_TO, BANNER_SLIDE_OUT) \
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	_banner_tween.parallel().tween_property(versus_banner, "modulate:a", 0.0, BANNER_SLIDE_OUT)
 	await _banner_tween.finished
-	versus_banner.visible = false
+	_hide_banner()
 
 
 func _hide_banner() -> void:
 	if _banner_tween != null and _banner_tween.is_valid():
 		_banner_tween.kill()
 	versus_banner.visible = false
+	versus_banner.position = Vector2.ZERO
 
 
 ## The opponent's blade takes their colour; the material is duplicated once
@@ -460,18 +573,22 @@ func _present_point_start(e: Dictionary) -> void:
 		_slide_paddle(p, state.players[p].col, true)
 	ball.stop()
 	ball.global_position = _hit_point(server) - Vector3(MatchState.side_of(server) * 0.1, 0.0, 0.0)
+	ball.spin_rate = 1.0
 	_set_stamina(e["stamina"])
 	var score: Array = e["score"]
 	rally_label.visible = int(score[0]) == points_to_win - 1 or int(score[1]) == points_to_win - 1
 	rally_label.text = "MATCH POINT"
 	_log("Your serve." if server == LOCAL else "Their serve.")
+	fx.emit("point_start", {"server": server, "score": score.duplicate(), "stamina": (e["stamina"] as Array).duplicate()})
 
 
 func _remote_turn() -> void:
 	var gen := _generation
+	_set_thinking(true)
 	await get_tree().create_timer(AI_THINK_TIME, false).timeout
 	if gen != _generation:
 		return
+	_set_thinking(false)
 	var action := AIController.choose(state, REMOTE, ai_params)
 	if action.is_empty():
 		# Nothing to play (the AI already warned): the match stalls rather
@@ -488,20 +605,29 @@ func _present_shot(e: Dictionary) -> void:
 	var card: Card = e["card"]
 	var zone: Zone = e["target"]
 	var outcome := int(e["outcome"])
+	var kind := String(e["kind"])
+	var tired := bool(e["tired"])
 	var landing := grid.landing_point(zone)
 	var who := "You" if shooter == LOCAL else "They"
-	var shot_name := card.title + (" (tired)" if bool(e["tired"]) else "")
+	var shot_name := card.title + (" (tired)" if tired else "")
 	var rally := int(e["rally_length"])
 
 	grid.set_state(zone, ZoneGrid.State.TARGET if shooter == LOCAL else ZoneGrid.State.INCOMING)
 	_swing(paddles[shooter], -float(side))
 	_set_stamina(e["stamina"])
+	ball.spin_rate = BallFlight.spin_for(card.produces)
+	fx.emit("swing", {"player": shooter, "power": card.power, "color": card.color, "tired": tired})
+	if card.power >= HIT_STOP_POWER:
+		Feel.hit_stop(get_tree())
+	if card.power >= PUNCH_POWER:
+		_punch(-2.0 - 4.0 * card.power)
 	if RALLY_MILESTONES.has(rally):
 		rally_label.text = "RALLY %d" % rally
 		rally_label.visible = true
-	if card.power > 0.8:
-		_camera_punch()
+		fx.emit("rally", {"length": rally})
 
+	# Where the ball ends up for the landing effects: the zone, or the net.
+	var pos := landing
 	match outcome:
 		RallyResolver.Outcome.FAULT:
 			if zone.is_edge_col() or zone.is_deep():
@@ -512,34 +638,57 @@ func _present_shot(e: Dictionary) -> void:
 				await ball.shot(landing, out, card.arc_height, card.speed)
 			else:
 				_log("%s: %s... into the net." % [who, shot_name])
-				await ball.into_net(Vector3(0.0, 0.92, landing.z * 0.5), card.speed, side)
-			if gen != _generation:
-				return
-			_show_callout("FAULT" if shooter == LOCAL else "THEY MISSED", shooter != LOCAL)
+				pos = Vector3(0.0, 0.92, landing.z * 0.5)
+				await ball.into_net(pos, card.speed, side)
 		RallyResolver.Outcome.WINNER:
 			_log("%s: %s to the %s. Clean winner." % [who, shot_name, zone.label()])
 			var past := landing + Vector3(side * 1.1, -0.45, signf(landing.z) * 0.3)
 			await ball.shot(landing, past, card.arc_height, card.speed)
-			if gen != _generation:
-				return
-			_show_callout("WINNER" if shooter == LOCAL else "THEIR POINT", shooter == LOCAL)
 		_:
 			_log("%s: %s to the %s." % [who, shot_name, zone.label()])
 			_slide_paddle(receiver, zone.col, false)
 			await ball.shot(landing, _hit_point(receiver), card.arc_height, card.speed)
-			if gen != _generation:
-				return
+	if gen != _generation:
+		return
+	fx.emit("landed", {"player": shooter, "outcome": outcome, "kind": kind, "zone": zone, "pos": pos,
+		"color": card.color, "tired": tired})
+	if kind == "ace" or kind == "edge" or kind == "winner" or kind == "tired":
+		Feel.hit_stop(get_tree())
+	var text := callout_text(kind, shooter == LOCAL)
+	if text != "":
+		# A winner is good news for its shooter, a fault for the other side.
+		_show_callout(text, (outcome == RallyResolver.Outcome.WINNER) == (shooter == LOCAL))
+
+
+## What the callout says for a shot event's `kind`: ACE and EDGE! for either
+## side, otherwise who the point went to, and TOO TIRED for a tired fault.
+static func callout_text(kind: String, by_local: bool) -> String:
+	match kind:
+		"ace":
+			return "ACE"
+		"edge":
+			return "EDGE!"
+		"winner":
+			return "WINNER" if by_local else "THEIR POINT"
+		"tired":
+			return "TOO TIRED"
+		"fault":
+			return "FAULT" if by_local else "THEY MISSED"
+	return ""
 
 
 func _present_point(e: Dictionary) -> void:
 	var gen := _generation
 	input_open = false
 	input_mode = InputMode.NONE
-	_refresh_score(e["score"])
+	var score: Array = e["score"]
+	_refresh_score(score)
+	fx.emit("point", {"winner": int(e["winner"]), "score": score.duplicate(),
+		"points_to_win": int(e["points_to_win"]), "rally_length": int(e["rally_length"])})
 	await get_tree().create_timer(POINT_HOLD_TIME, false).timeout
 	if gen != _generation:
 		return
-	callout.visible = false
+	_hide_callout()
 	if state.phase != MatchState.Phase.MATCH_OVER:
 		_enqueue(state.start_point())
 
@@ -548,14 +697,16 @@ func _present_match_over(e: Dictionary) -> void:
 	var gen := _generation
 	var winner := int(e["winner"])
 	var won := winner == LOCAL
+	var score: Array = e["score"]
 	_log("Match over. You %s %d to %d." % ["win" if won else "lose", state.players[0].score, state.players[1].score])
-	_show_callout("YOU WIN" if won else "YOU LOSE", won)
+	_show_callout("YOU WIN" if won else "YOU LOSE", won, false)
 	hand_ui.clear()
 	incoming_label.text = ""
 	hint_label.text = ""
 	rally_label.visible = false
 	input_open = false
 	input_mode = InputMode.NONE
+	fx.emit("match_over", {"won": won, "score": score.duplicate()})
 	await get_tree().create_timer(MATCH_OVER_HOLD, false).timeout
 	if gen != _generation:
 		return
@@ -595,6 +746,7 @@ func _select_card(index: int) -> void:
 	hand_ui.set_selected(index)
 	input_mode = InputMode.AIM
 	get_viewport().gui_release_focus()
+	fx.emit("card_select", {"index": index})
 	_set_hover(_cursor_zone())
 	_update_hover_hint()
 
@@ -605,6 +757,7 @@ func _unselect_card() -> void:
 	selected_index = -1
 	hand_ui.set_selected(-1)
 	input_mode = InputMode.HAND
+	fx.emit("card_deselect", {})
 	_set_hover(null)
 	_update_hover_hint()
 	hand_ui.focus_index(maxi(back_to, 0))
@@ -718,6 +871,8 @@ func _set_hover(z: Zone) -> void:
 	hover_zone = z
 	if hover_zone != null and grid.state_of(hover_zone) == ZoneGrid.State.IDLE:
 		grid.set_state(hover_zone, ZoneGrid.State.HOVER)
+	if hover_zone != null:
+		fx.emit("zone_hover", {"zone": hover_zone})
 	_update_hover_hint()
 
 
@@ -744,6 +899,7 @@ func choose_zone(zone: Zone) -> void:
 	if not input_open or selected_index < 0 or zone == null or zone.side <= 0:
 		return
 	var action := {"type": "shot", "player": LOCAL, "card": selected_index, "row": zone.row, "col": zone.col}
+	fx.emit("zone_commit", {"zone": zone})
 	_submit(action)
 
 
@@ -755,6 +911,8 @@ func _submit(action: Dictionary) -> void:
 	selected_index = -1
 	hand_ui.set_enabled(false)
 	_set_hover(null)
+	# The log line narrates the shot in flight; the hint has nothing to add.
+	hint_label.text = ""
 	_enqueue(state.apply(action))
 
 
@@ -765,15 +923,20 @@ func _hit_point(player: int) -> Vector3:
 	return Vector3(side * (PADDLE_X - 0.15), PADDLE_Y, layout.lane_z(state.players[player].col))
 
 
+## Moves a paddle along the table to lane `col`. Only x and z: the height is
+## the idle bob's, in _process.
 func _slide_paddle(player: int, col: int, instant: bool) -> void:
 	var side := MatchState.side_of(player)
-	var to := Vector3(side * PADDLE_X, PADDLE_Y, layout.lane_z(col))
 	var paddle := paddles[player]
+	var x := side * PADDLE_X
+	var z := layout.lane_z(col)
 	if instant:
-		paddle.position = to
+		paddle.position.x = x
+		paddle.position.z = z
 		return
-	var t := create_tween()
-	t.tween_property(paddle, "position", to, 0.22).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
+	var t := create_tween().set_parallel(true)
+	t.tween_property(paddle, "position:x", x, 0.22).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
+	t.tween_property(paddle, "position:z", z, 0.22).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
 
 
 func _swing(paddle: Node3D, dir: float) -> void:
@@ -782,25 +945,48 @@ func _swing(paddle: Node3D, dir: float) -> void:
 	t.tween_property(paddle, "rotation:y", deg_to_rad(75.0 * dir), 0.25).as_relative().set_ease(Tween.EASE_OUT)
 
 
-func _camera_punch() -> void:
-	var start_fov := camera.fov
+## A quick fov kick of `delta_fov` degrees (negative zooms in). The camera rig
+## (M3) does it with its own shake and lean; a plain Camera3D gets the tween.
+func _punch(delta_fov: float) -> void:
+	if camera.has_method("punch"):
+		camera.call("punch", delta_fov)
+		return
 	var t := create_tween()
-	t.tween_property(camera, "fov", start_fov - 4.0, 0.06)
-	t.tween_property(camera, "fov", start_fov, 0.25).set_ease(Tween.EASE_OUT)
+	t.tween_property(camera, "fov", _base_fov + delta_fov, 0.06)
+	t.tween_property(camera, "fov", _base_fov, 0.25).set_ease(Tween.EASE_OUT)
 
 
-func _show_callout(text: String, good_for_local: bool) -> void:
+## Pops the 3D callout in; with `auto_fade` it holds CALLOUT_HOLD and fades
+## out by itself, otherwise it stays until the next callout or point.
+func _show_callout(text: String, good_for_local: bool, auto_fade := true) -> void:
+	_hide_callout()
 	callout.text = text
-	callout.modulate = Color(1.0, 0.85, 0.3) if good_for_local else Color(0.95, 0.4, 0.4)
+	callout.modulate = CALLOUT_GOOD if good_for_local else CALLOUT_BAD
 	callout.visible = true
 	callout.scale = Vector3.ONE * 0.4
-	var t := create_tween()
-	t.tween_property(callout, "scale", Vector3.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_callout_tween = create_tween()
+	_callout_tween.tween_property(callout, "scale", Vector3.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	if auto_fade:
+		_callout_tween.tween_interval(CALLOUT_HOLD - 0.18)
+		_callout_tween.tween_property(callout, "modulate:a", 0.0, CALLOUT_FADE)
+		_callout_tween.tween_callback(_hide_callout)
 
 
+func _hide_callout() -> void:
+	if _callout_tween != null and _callout_tween.is_valid():
+		_callout_tween.kill()
+	callout.visible = false
+
+
+## The pips follow the events, and every change goes out as a stamina fx.
 func _set_stamina(values: Array) -> void:
+	var before := _shown_stamina
 	_shown_stamina = values.duplicate()
 	_refresh_stamina()
+	for p in 2:
+		var delta := int(values[p]) - int(before[p])
+		if delta != 0:
+			fx.emit("stamina", {"player": p, "value": int(values[p]), "delta": delta})
 
 
 ## The score comes from the point event, never from the state: the state has

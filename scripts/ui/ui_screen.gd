@@ -34,6 +34,14 @@ func press(action: String, data: Dictionary = {}) -> void:
 	done.emit(action, data)
 
 
+## The Director took `action`: it was not a click during a fade or a
+## superseded screen. A screen that wants to show the choice (the reward
+## card lifting) does it here, so nothing moves for a choice that was
+## dropped. The base does nothing.
+func on_accepted(_action: String, _data: Dictionary) -> void:
+	pass
+
+
 ## Routes `button` to press(action).
 func _bind(button: Button, action: String) -> void:
 	button.pressed.connect(press.bind(action))

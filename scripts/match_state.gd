@@ -348,11 +348,14 @@ func _end_point(winner: int) -> Array[Dictionary]:
 	return events
 
 
-## Snapshot for reconnects, replays or spectators. Cards travel as ids.
+## Snapshot for reconnects, replays or spectators. Cards travel as ids. The
+## seed and the RNG state travel as decimal strings: JSON parses numbers as
+## doubles, which lose the low bits of a 64-bit value, and a peer that
+## resumes from a snapshot must roll the same shots as the one that sent it.
 func to_dict() -> Dictionary:
 	return {
-		"seed": seed_value,
-		"rng_state": rng.state,
+		"seed": str(seed_value),
+		"rng_state": str(rng.state),
 		"players": [players[0].to_dict(), players[1].to_dict()],
 		"points_to_win": points_to_win,
 		"points_played": points_played,
@@ -366,10 +369,13 @@ func to_dict() -> Dictionary:
 	}
 
 
+## Rebuilds a match from to_dict() output, in memory or after a JSON round
+## trip. The seed and rng_state may be ints (older snapshots) or the decimal
+## strings to_dict() writes.
 static func from_dict(d: Dictionary, p_layout: ZoneLayout) -> MatchState:
 	var empty: Array[Card] = []
-	var s := MatchState.new(int(d["seed"]), [empty, empty], p_layout, int(d["points_to_win"]))
-	s.rng.state = int(d["rng_state"])
+	var s := MatchState.new(_as_int(d["seed"]), [empty, empty], p_layout, int(d["points_to_win"]))
+	s.rng.state = _as_int(d["rng_state"])
 	s.players = [PlayerState.from_dict(d["players"][0]), PlayerState.from_dict(d["players"][1])]
 	s.points_played = int(d["points_played"])
 	s.rally_length = int(d["rally_length"])
@@ -380,3 +386,9 @@ static func from_dict(d: Dictionary, p_layout: ZoneLayout) -> MatchState:
 	s.incoming_heavy = bool(d["incoming_heavy"])
 	s.phase = int(d["phase"]) as Phase
 	return s
+
+
+## A 64-bit value from a snapshot: an int or float as it is, a decimal string
+## with all its bits (int(String) would go through a double).
+static func _as_int(v: Variant) -> int:
+	return int(v) if typeof(v) in [TYPE_INT, TYPE_FLOAT] else String(v).to_int()

@@ -134,7 +134,6 @@ that seat without touching the rules.
 ## Obvious next steps
 
 - Online multiplayer: a RemoteController plus seed and action exchange, see above.
-- A ball trail and paddle impact particles; the shader is ready for more drama.
 
 ## Headless checks
 

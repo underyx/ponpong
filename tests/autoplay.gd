@@ -3,7 +3,10 @@
 ## AI picks and random cards (so tired plays and faults happen), pauses once
 ## mid-rally and checks the match froze, walks the zone cursor once with real
 ## input events, retries the seed when no match was ever won, and finishes on
-## the main menu once the run ended and every screen was seen.
+## the main menu once the run ended and every screen was seen. Along the way
+## it checks the feel layer keeps its promises: no `fx` moment fires while
+## the match is paused, the time scale is back at base on every screen, and
+## the Sfx node built every clip with sound in it.
 ## Usage: godot --headless --fixed-fps 60 -s tests/autoplay.gd
 extends SceneTree
 
@@ -47,6 +50,11 @@ var pause_snapshot: Dictionary = {}
 var pause_ball := Vector3.ZERO
 var pause_paddles: Array = []
 var pause_log := ""
+## `fx` moments the match has emitted, and the count when it was paused.
+var fx_events := 0
+var pause_fx := 0
+## Frames that began with the clock slowed by a hit stop.
+var stop_frames := 0
 var cursor_done := false
 var cursor_step := 0
 var cursor_frame := 0
@@ -66,6 +74,8 @@ func _process(_delta: float) -> bool:
 		_fail("timed out after %d frames" % frames)
 		return _finish()
 	_watch_score()
+	if not is_equal_approx(Engine.time_scale, Feel.base_time_scale):
+		stop_frames += 1
 	if director.transitioning:
 		return false
 	var name := director.screen_name
@@ -73,6 +83,10 @@ func _process(_delta: float) -> bool:
 		last_screen = name
 		visited[name] = int(visited.get(name, 0)) + 1
 		print("  [%5d] screen: %s" % [frames, name if name != "" else "match"])
+		# Every screen change resets any hit stop; a stuck slow motion would
+		# show here first.
+		_check(is_equal_approx(Engine.time_scale, Feel.base_time_scale),
+			"time scale %.3f is not base %.3f on screen %s" % [Engine.time_scale, Feel.base_time_scale, name])
 	_check_focus(name)
 	if pause_step > 0:
 		_pause_flow()
@@ -89,7 +103,7 @@ func _process(_delta: float) -> bool:
 			_fail("pause screen appeared outside the pause flow")
 			_press("resume")
 		"match_end":
-			_check(is_equal_approx(Engine.time_scale, 1.0), "time scale is 1.0 on match_end")
+			_check(is_equal_approx(Engine.time_scale, Feel.base_time_scale), "time scale is back to base on match_end")
 			_press("continue")
 		"reward":
 			_reward()
@@ -109,6 +123,11 @@ func _boot() -> void:
 	director.save_path = TEST_SAVE
 	_remove_test_save()
 	root.add_child(director)
+	# The Director turns hit stop off headlessly; turn it back on so the
+	# time-scale checks below watch stops that really happened and were
+	# really undone.
+	Feel.enabled = true
+	director.match_scene.fx.connect(func(_name: String, _data: Dictionary) -> void: fx_events += 1)
 	print("autoplay: director loaded, run seed %d" % SEED)
 
 
@@ -232,6 +251,7 @@ func _pause_flow() -> bool:
 				pause_ball = m.ball.global_position
 				pause_paddles = [m.paddles[0].position, m.paddles[1].position]
 				pause_log = m.log_label.text
+				pause_fx = fx_events
 				pause_step = 2
 				pause_frame = frames
 				print("  [%5d] paused mid-rally, watching %d frames" % [frames, PAUSE_WATCH_FRAMES])
@@ -246,6 +266,7 @@ func _pause_flow() -> bool:
 			_check(m.ball.global_position == pause_ball, "ball frozen while paused")
 			_check([m.paddles[0].position, m.paddles[1].position] == pause_paddles, "paddles frozen while paused")
 			_check(m.log_label.text == pause_log, "log frozen while paused")
+			_check(fx_events == pause_fx, "%d fx events fired while paused" % (fx_events - pause_fx))
 			_check(is_paused, "tree still paused after %d frames" % PAUSE_WATCH_FRAMES)
 			_press("deck")
 			pause_step = 3
@@ -275,7 +296,7 @@ func _pause_flow() -> bool:
 		5:
 			if director.screen_name == "":
 				_check(not is_paused, "tree unpaused after resume")
-				_check(is_equal_approx(Engine.time_scale, 1.0), "time scale restored after resume")
+				_check(is_equal_approx(Engine.time_scale, Feel.base_time_scale), "time scale restored after resume")
 				print("  [%5d] resumed; pause invariant held" % frames)
 				pause_done = true
 				pause_step = 0
@@ -401,18 +422,51 @@ func _finish() -> bool:
 	for s in REQUIRED_SCREENS:
 		_check(visited.has(s), "screen %s was visited" % s)
 	_check(runs == MAX_RUNS or real_picks > 0, "a reward card was picked through the Director")
+	_check(is_equal_approx(Engine.time_scale, Feel.base_time_scale), "time scale is at base at the end")
+	_check(stop_frames > 0, "a hit stop slowed the clock at some point during the run")
+	_check(fx_events > 0, "the match emitted fx moments (%d)" % fx_events)
+	_check_sfx()
 	# Every screen the Director built was either shown or freed: an
 	# interrupted fade must not leak the screen it was about to show.
 	var orphans := int(Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT))
 	_check(orphans == 0, "%d orphan nodes at the end of the run" % orphans)
-	print("autoplay: %d run(s), %d local plays (%d tired), %d reward picks, %d score changes, %d frames, screens %s" % [
-		runs, plays, tired_plays, real_picks, points, frames, visited])
+	print("autoplay: %d run(s), %d local plays (%d tired), %d reward picks, %d score changes, %d frames (%d in hit stop), screens %s" % [
+		runs, plays, tired_plays, real_picks, points, frames, stop_frames, visited])
 	print("autoplay: %s" % ("OK" if failures == 0 else "%d FAILURES" % failures))
 	root.remove_child(director)
 	director.free()
 	_remove_test_save()
 	quit(0 if failures == 0 else 1)
 	return true
+
+
+## The Sfx node in main.tscn built every clip it names, each long enough to
+## be a sound and not silent. Never played back here: the data is the test.
+func _check_sfx() -> void:
+	var sfx := Sfx.instance
+	if sfx == null or not is_instance_valid(sfx):
+		_fail("no Sfx node is in the tree")
+		return
+	_check(Sfx.NAMES.size() == 20, "Sfx names %d clips, not 20" % Sfx.NAMES.size())
+	_check(sfx.streams.size() == Sfx.NAMES.size(), "Sfx built %d streams for %d names" % [
+		sfx.streams.size(), Sfx.NAMES.size()])
+	var silent := 0
+	for name in Sfx.NAMES:
+		var stream: AudioStreamWAV = sfx.streams.get(name)
+		if stream == null:
+			_fail("clip %s was not built" % name)
+			continue
+		var data := stream.data
+		_check(data.size() > 1000, "clip %s has only %d bytes" % [name, data.size()])
+		var has_sound := false
+		for i in range(0, data.size() - 1, 2):
+			if data.decode_s16(i) != 0:
+				has_sound = true
+				break
+		if not has_sound:
+			silent += 1
+			_fail("clip %s is silent" % name)
+	print("autoplay: sfx %d streams, %d silent" % [sfx.streams.size(), silent])
 
 
 static func _remove_test_save() -> void:

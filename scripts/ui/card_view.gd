@@ -7,6 +7,13 @@
 ## matchup line reads against the incoming ball and over-budget cards are
 ## drawn tired; in a deck or reward view (stamina -1) it lists every strong
 ## and weak matchup instead and an "xN" badge shows how many copies there are.
+##
+## Motion: a card deals in from below or flips in, lifts under the mouse or
+## the focus, tilts when selected, pulses its TIRED line, shakes when an
+## unaffordable card is picked, and flies out when played. Every animated
+## quantity is its own channel laid over `rest_position`, the spot the
+## container gave the card, so the lift, the deal-in and a shake never fight
+## each other or the layout. Nothing here plays a sound.
 class_name CardView
 extends Button
 
@@ -28,11 +35,42 @@ const BADGE_CORNER := 9
 ## How far outside the card the focus ring is drawn.
 const FOCUS_RING_GAP := 4.0
 
+## Deal-in: the card rises this far while fading in, one after another.
+const DEAL_DROP := 140.0
+const DEAL_TIME := 0.18
+const DEAL_STAGGER := 0.05
+## Flip-in (rewards): the card opens from a line to full width.
+const FLIP_TIME := 0.18
+const FLIP_STAGGER := 0.12
+## Under the mouse or the focus the card grows a little and lifts.
+const RAISE_TIME := 0.08
+const RAISE_LIFT := -10.0
+const RAISE_ZOOM := 1.04
+## The card about to be played grows more and tilts.
+const SELECTED_ZOOM := 1.06
+const SELECTED_TILT_DEG := -2.0
+## The reward card that was taken.
+const PICK_ZOOM := 1.1
+const PICK_LIFT := -16.0
+const FADE_TIME := 0.15
+const PLAY_OUT_TIME := 0.15
+## An unaffordable pick shakes the card sideways this far, this many times.
+const SHAKE_PX := 4.0
+const SHAKE_TIMES := 3
+const SHAKE_STEP := 0.03
+## The TIRED line breathes between these over a PULSE_PERIOD loop.
+const PULSE_LOW := 0.6
+const PULSE_PERIOD := 0.8
+
 var card: Card
 ## How many copies this face stands for (deck views group identical cards).
 var copies := 1
 var tired := false
 var selected := false
+## Under the mouse or holding focus: drawn lifted.
+var raised := false
+## Where the container put the card; every motion is an offset from here.
+var rest_position := Vector2.ZERO
 
 var _face_color := Color(0.9, 0.9, 0.9)
 var _rarity_border := UiKit.OUTLINE
@@ -46,13 +84,56 @@ var _tired_line: Label
 var _cost_badge: Label
 var _count_badge: Label
 
+## The motion channels; see _apply_transform().
+var _zoom := 1.0
+var _flip := 1.0
+var _raise_y := 0.0
+var _deal_y := 0.0
+var _shake_x := 0.0
+var _tilt_deg := 0.0
+var _motion: Tween
+var _entry: Tween
+var _pulse: Tween
+var _shake: Tween
+var _fade: Tween
+## An entry asked for before the card was in the tree: "deal" or "flip".
+var _pending_entry := ""
+var _pending_delay := 0.0
+var _sorted_parent: Container
+
 
 func _init() -> void:
 	custom_minimum_size = SIZE
+	size = SIZE
+	pivot_offset = SIZE * 0.5
 	focus_mode = Control.FOCUS_ALL
 	text = ""
 	_build_face()
 	_apply_style()
+	resized.connect(_on_resized)
+	mouse_entered.connect(_on_mouse_entered)
+	mouse_exited.connect(_on_mouse_exited)
+	focus_entered.connect(_on_focus_changed.bind(true))
+	focus_exited.connect(_on_focus_changed.bind(false))
+
+
+func _enter_tree() -> void:
+	rest_position = position
+	var parent := get_parent()
+	if parent is Container:
+		_sorted_parent = parent
+		_sorted_parent.sort_children.connect(_on_parent_sorted)
+	if _pending_entry != "":
+		_start_entry(_pending_entry, _pending_delay)
+		_pending_entry = ""
+	_refresh_pulse()
+
+
+func _exit_tree() -> void:
+	if _sorted_parent != null and is_instance_valid(_sorted_parent):
+		_sorted_parent.sort_children.disconnect(_on_parent_sorted)
+	_sorted_parent = null
+	stop_motion()
 
 
 ## Fills the face for `p_card`. `incoming` is the ball type the card would
@@ -94,21 +175,32 @@ func set_card(p_card: Card, incoming: int = BallType.NONE, stamina: int = -1, co
 	_apply_style()
 
 
-## Washes the card out and shows the red TIRED line: the player can still play
-## it, the shot just lands worse.
+## Washes the card out and shows the red TIRED line, which breathes while
+## the card is in the tree: the player can still play it, the shot just
+## lands worse.
 func set_tired(p_tired: bool) -> void:
 	tired = p_tired
 	modulate = TIRED_MODULATE if tired else Color.WHITE
 	_tired_line.visible = tired
+	_refresh_pulse()
 
 
-## The pressed look with a gold border: the card the player is about to play,
-## or the one marked for removal.
+## The pressed look with a gold border and a tilt: the card the player is
+## about to play, or the one marked for removal.
 func set_selected(on: bool) -> void:
 	selected = on
 	if toggle_mode:
 		set_pressed_no_signal(on)
 	_apply_style()
+	_refresh_motion()
+
+
+## Lifted, as under the mouse. Hover and focus set this by themselves.
+func set_raised(on: bool) -> void:
+	if raised == on:
+		return
+	raised = on
+	_refresh_motion()
 
 
 static func is_tired(p_card: Card, stamina: int) -> bool:
@@ -135,6 +227,214 @@ static func matchup_summary(p_card: Card) -> String:
 		parts.append(" ".join(weak))
 	return "   ".join(parts)
 
+
+# --- motion ------------------------------------------------------------------
+
+## Starts DEAL_DROP below its spot and invisible, then rises and fades in
+## after `delay` seconds. Safe before the card is in the tree: it starts on
+## entering.
+func deal_in(delay := 0.0) -> void:
+	_deal_y = DEAL_DROP
+	modulate.a = 0.0
+	_apply_transform()
+	_queue_entry("deal", delay)
+
+
+## Starts as a vertical line and opens to full width after `delay` seconds.
+func flip_in(delay := 0.0) -> void:
+	_flip = 0.0
+	_apply_transform()
+	_queue_entry("flip", delay)
+
+
+## The reward card that was taken: bigger and higher than a hover.
+func lift_pick() -> void:
+	_tween_motion(PICK_ZOOM, PICK_LIFT, 0.0)
+
+
+## Fades the whole card to `alpha` (the reward cards that were not taken).
+func fade_to(alpha: float) -> void:
+	_kill(_fade)
+	if not is_inside_tree():
+		modulate.a = alpha
+		return
+	_fade = create_tween()
+	_fade.tween_property(self, "modulate:a", alpha, FADE_TIME)
+
+
+## The card was played: it shrinks away and frees itself.
+func play_out() -> void:
+	_kill(_motion)
+	_kill(_entry)
+	_kill(_shake)
+	_kill(_fade)
+	disabled = true
+	if not is_inside_tree():
+		queue_free()
+		return
+	_fade = create_tween().set_parallel(true)
+	_fade.tween_method(_set_zoom, _zoom, 0.0, PLAY_OUT_TIME).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
+	_fade.tween_property(self, "modulate:a", 0.0, PLAY_OUT_TIME)
+	_fade.chain().tween_callback(func() -> void:
+		if is_instance_valid(self):
+			queue_free())
+
+
+## A quick sideways rattle: the card was picked but cannot be afforded.
+func shake() -> void:
+	_kill(_shake)
+	if not is_inside_tree():
+		return
+	_shake = create_tween()
+	for i in SHAKE_TIMES:
+		_shake.tween_method(_set_shake_x, 0.0, SHAKE_PX, SHAKE_STEP)
+		_shake.tween_method(_set_shake_x, SHAKE_PX, -SHAKE_PX, SHAKE_STEP * 2.0)
+		_shake.tween_method(_set_shake_x, -SHAKE_PX, 0.0, SHAKE_STEP)
+
+
+## Kills every tween and puts the card back at rest, at full size and
+## opacity. The hand calls this before dropping its cards.
+func stop_motion() -> void:
+	_kill(_motion)
+	_kill(_entry)
+	_kill(_pulse)
+	_kill(_shake)
+	_kill(_fade)
+	_pending_entry = ""
+	_zoom = 1.0
+	_flip = 1.0
+	_raise_y = 0.0
+	_deal_y = 0.0
+	_shake_x = 0.0
+	_tilt_deg = 0.0
+	modulate.a = 1.0
+	_tired_line.modulate = Color.WHITE
+	_apply_transform()
+
+
+func _queue_entry(kind: String, delay: float) -> void:
+	if is_inside_tree():
+		_start_entry(kind, delay)
+	else:
+		_pending_entry = kind
+		_pending_delay = delay
+
+
+func _start_entry(kind: String, delay: float) -> void:
+	_kill(_entry)
+	_entry = create_tween().set_parallel(true)
+	if kind == "deal":
+		_entry.tween_method(_set_deal_y, DEAL_DROP, 0.0, DEAL_TIME).set_delay(delay) \
+			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		_entry.tween_property(self, "modulate:a", 1.0, DEAL_TIME).set_delay(delay)
+	else:
+		_entry.tween_method(_set_flip, 0.0, 1.0, FLIP_TIME).set_delay(delay) \
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+
+
+## Eases zoom, lift and tilt to what `selected` and `raised` call for.
+func _refresh_motion() -> void:
+	if selected:
+		_tween_motion(SELECTED_ZOOM, RAISE_LIFT, SELECTED_TILT_DEG)
+	elif raised:
+		_tween_motion(RAISE_ZOOM, RAISE_LIFT, 0.0)
+	else:
+		_tween_motion(1.0, 0.0, 0.0)
+
+
+func _tween_motion(zoom: float, raise_y: float, tilt_deg: float) -> void:
+	_kill(_motion)
+	if not is_inside_tree():
+		_set_zoom(zoom)
+		_set_raise_y(raise_y)
+		_set_tilt(tilt_deg)
+		return
+	_motion = create_tween().set_parallel(true)
+	_motion.tween_method(_set_zoom, _zoom, zoom, RAISE_TIME).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_motion.tween_method(_set_raise_y, _raise_y, raise_y, RAISE_TIME).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_motion.tween_method(_set_tilt, _tilt_deg, tilt_deg, RAISE_TIME).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+
+
+## The TIRED line breathes while the card is tired and in the tree.
+func _refresh_pulse() -> void:
+	_kill(_pulse)
+	_tired_line.modulate = Color.WHITE
+	if not (tired and is_inside_tree()):
+		return
+	_pulse = create_tween().set_loops()
+	var low := Color(PULSE_LOW, PULSE_LOW, PULSE_LOW)
+	_pulse.tween_property(_tired_line, "modulate", low, PULSE_PERIOD * 0.5).set_trans(Tween.TRANS_SINE)
+	_pulse.tween_property(_tired_line, "modulate", Color.WHITE, PULSE_PERIOD * 0.5).set_trans(Tween.TRANS_SINE)
+
+
+func _set_zoom(v: float) -> void:
+	_zoom = v
+	_apply_transform()
+
+
+func _set_flip(v: float) -> void:
+	_flip = v
+	_apply_transform()
+
+
+func _set_raise_y(v: float) -> void:
+	_raise_y = v
+	_apply_transform()
+
+
+func _set_deal_y(v: float) -> void:
+	_deal_y = v
+	_apply_transform()
+
+
+func _set_shake_x(v: float) -> void:
+	_shake_x = v
+	_apply_transform()
+
+
+func _set_tilt(v: float) -> void:
+	_tilt_deg = v
+	_apply_transform()
+
+
+## Lays every channel over the rest position in one go.
+func _apply_transform() -> void:
+	scale = Vector2(_zoom * _flip, _zoom)
+	rotation = deg_to_rad(_tilt_deg)
+	position = rest_position + Vector2(_shake_x, _deal_y + _raise_y)
+
+
+## The container has just placed the card: that is the new rest position,
+## and the motion goes back on top of it.
+func _on_parent_sorted() -> void:
+	rest_position = position
+	_apply_transform()
+
+
+func _on_resized() -> void:
+	pivot_offset = size * 0.5
+
+
+func _on_mouse_entered() -> void:
+	if not disabled:
+		set_raised(true)
+
+
+func _on_mouse_exited() -> void:
+	if not has_focus():
+		set_raised(false)
+
+
+func _on_focus_changed(on: bool) -> void:
+	set_raised(on or (is_inside_tree() and get_viewport().gui_get_hovered_control() == self))
+
+
+static func _kill(t: Tween) -> void:
+	if t != null and t.is_valid():
+		t.kill()
+
+
+# --- face ----------------------------------------------------------------------
 
 func _build_face() -> void:
 	_face = VBoxContainer.new()

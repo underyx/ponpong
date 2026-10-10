@@ -6,6 +6,10 @@
 ##        "hearts": int, "stage": int (0-based, the stage just won), "stages": int,
 ##        "next": {"name", "blurb", "points_to_win", "deck_summary", "boss"}}
 ## actions: pick {index}, skip, trim, deck. No back action: a choice is required.
+##
+## The three cards flip in one after another. Once the Director has taken a
+## pick (on_accepted), the chosen card lifts and chimes while the other two
+## fade; the Director holds the screen for that beat before the next match.
 class_name RewardScreen
 extends UiScreen
 
@@ -15,6 +19,8 @@ const SKIP_SIZE := Vector2(150, 52)
 const ACTION_SIZE := Vector2(230, 48)
 ## The scouting panel never grows past the card row.
 const PANEL_WIDTH := 740
+## What the cards that were not taken fade to.
+const UNPICKED_ALPHA := 0.3
 
 var views: Array[CardView] = []
 var skip_button: Button
@@ -43,7 +49,8 @@ func setup(p_args: Dictionary) -> void:
 		view.name = "Offer%d" % (i + 1)
 		view.set_card(card)
 		view.disabled = deck_full
-		view.pressed.connect(press.bind("pick", {"index": i}))
+		view.pressed.connect(_on_pick.bind(i))
+		view.flip_in(i * CardView.FLIP_STAGGER)
 		row.add_child(view)
 		views.append(view)
 	skip_button = UiKit.button("Skip", 22, SKIP_SIZE)
@@ -72,6 +79,25 @@ func setup(p_args: Dictionary) -> void:
 		int(args.get("stages", RunState.STAGES))], 18, UiKit.MUTED)
 	box.add_child(footer)
 	add_child(UiKit.center(box))
+
+
+## Card `index` was clicked: the choice leaves; what it looks like waits for
+## the Director to accept it, so a click during a fade changes nothing.
+func _on_pick(index: int) -> void:
+	press("pick", {"index": index})
+
+
+## The pick went through: the chosen card lifts and chimes, the others fade.
+func on_accepted(action: String, data: Dictionary) -> void:
+	if action != "pick":
+		return
+	var index := int(data.get("index", -1))
+	Sfx.play("reward_pick")
+	for i in views.size():
+		if i == index:
+			views[i].lift_pick()
+		else:
+			views[i].fade_to(UNPICKED_ALPHA)
 
 
 ## "Next: Jax Dunn (first to 7)", the blurb and the deck summary, with a BOSS

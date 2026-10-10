@@ -18,6 +18,13 @@ const FADE_OUT := 0.12
 const FADE_IN := 0.18
 ## Screens that keep the tree paused while they are up.
 const PAUSE_FAMILY := ["pause"]
+## How long the reward screen stays up after a pick, so the chosen card's
+## lift and the others' fade (CardView.RAISE_TIME, FADE_TIME) can be seen
+## before the match replaces the screen. 0 headlessly, like the fades.
+const PICK_HOLD := 0.3
+## screen/action pairs whose screen plays its own sound for the choice, so
+## the generic click stays out of the way of it.
+const SELF_VOICED := ["reward/pick"]
 
 var run: RunState
 var match_scene: MatchScene
@@ -46,13 +53,14 @@ var _show_gen := 0
 ## never emits `finished`, so the waiting call cannot free it: whoever
 ## supersedes it does.
 var _pending: UiScreen
-## Engine.time_scale at boot, restored on every screen change (honours --time-scale).
-var _base_time_scale := 1.0
 
 
 func _ready() -> void:
 	InputSetup.register()
-	_base_time_scale = Engine.time_scale
+	# Hit stop restores to the time scale the game booted with (--time-scale
+	# included), and is off headlessly, where frames are not time.
+	Feel.base_time_scale = Engine.time_scale
+	Feel.enabled = not _headless()
 	match_scene = $Match
 	_screens = $Screens
 	_fade = ColorRect.new()
@@ -63,6 +71,14 @@ func _ready() -> void:
 	_screens.add_child(_fade)
 	match_scene.match_finished.connect(_on_match_finished)
 	device_changed.connect(match_scene.set_gamepad)
+	# The sounds follow the match through its signals; the match never calls
+	# them. Children are ready before their parent, so the Sfx node (when the
+	# scene has one) has already claimed its static instance here.
+	var sfx := Sfx.instance
+	if sfx != null:
+		match_scene.fx.connect(sfx.on_fx)
+		match_scene.ball.bounced.connect(sfx.on_bounced)
+		match_scene.ball.netted.connect(sfx.on_netted)
 	match_scene.set_idle(true)
 	show_screen("main_menu", _menu_args())
 
@@ -148,6 +164,10 @@ func _on_screen_done(action: String, data: Dictionary) -> void:
 	if transitioning:
 		return
 	var key := "%s/%s" % [screen_name, action]
+	if not SELF_VOICED.has(key):
+		Sfx.play("ui_back" if action != "" and action == screen.back_action else "ui_accept")
+	if screen != null:
+		screen.on_accepted(action, data)
 	match key:
 		"main_menu/new_run":
 			start_run(next_seed if next_seed >= 0 else randi())
@@ -174,6 +194,14 @@ func _on_screen_done(action: String, data: Dictionary) -> void:
 		"reward/pick":
 			run.apply({"type": "pick_reward", "index": int(data.get("index", -1))})
 			save_run()
+			# The screen stays up while the picked card lifts; a second click
+			# meanwhile is a click during a transition and is dropped above.
+			transitioning = true
+			var my := _show_gen
+			await get_tree().create_timer(0.0 if _headless() else PICK_HOLD, true, false, true).timeout
+			if my != _show_gen:
+				# Something else showed a screen meanwhile (it owns the flow now).
+				return
 			_route()
 		"reward/skip":
 			run.apply({"type": "pick_reward", "index": -1})
@@ -229,7 +257,8 @@ func show_screen(name: String, args: Dictionary = {}) -> void:
 	var my := _show_gen
 	transitioning = true
 	screen_name = name
-	Engine.time_scale = _base_time_scale
+	# A hit stop must never outlive the moment it froze.
+	Feel.reset()
 	if not _keeps_pause(name, args):
 		get_tree().paused = false
 	await _fade_to(1.0, FADE_OUT)
@@ -250,6 +279,9 @@ func show_screen(name: String, args: Dictionary = {}) -> void:
 	var f := screen.first_focus()
 	if f != null:
 		f.grab_focus()
+	# Wired after the first grab, so opening a screen is silent and only
+	# moving around it ticks.
+	_wire_focus_sounds(screen)
 	await _fade_to(0.0, FADE_IN)
 	if my != _show_gen:
 		return
@@ -278,6 +310,8 @@ func toggle_pause() -> void:
 		match_scene.refocus()
 	else:
 		tree.paused = true
+		# The pause key has no button to click: it sounds like Esc.
+		Sfx.play("ui_back")
 		show_screen("pause")
 
 
@@ -309,6 +343,15 @@ func _make_screen(name: String) -> UiScreen:
 ## Pause, and the screens opened from it, leave the tree paused.
 static func _keeps_pause(name: String, args: Dictionary) -> bool:
 	return PAUSE_FAMILY.has(name) or String(args.get("return", "")) == "pause"
+
+
+## Every control on the screen that takes focus ticks when it gets it, so a
+## gamepad can be heard moving. The hand does the same for its own cards.
+static func _wire_focus_sounds(node: Node) -> void:
+	if node is Control and (node as Control).focus_mode == Control.FOCUS_ALL:
+		(node as Control).focus_entered.connect(func() -> void: Sfx.play("ui_move"))
+	for child in node.get_children():
+		_wire_focus_sounds(child)
 
 
 func _free_screen() -> void:

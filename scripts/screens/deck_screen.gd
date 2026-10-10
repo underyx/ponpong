@@ -16,8 +16,9 @@ const GRID_SEPARATION := 14
 const VISIBLE_ROWS := 3
 ## Room kept beside the grid for the vertical scrollbar.
 const SCROLLBAR_WIDTH := 16
-## Space around the grid inside the scroll area, for the cards' focus rings.
-const GRID_PADDING := 6
+## Space around the grid inside the scroll area, for the cards' focus rings
+## and the lift of a hovered or focused card on the top row.
+const GRID_PADDING := 16
 const HEADERS := {
 	"regroup": "Regroup: remove one card before the rematch",
 	"trim": "Trim: remove one card, or keep them all",
@@ -175,6 +176,7 @@ func _buttons() -> HBoxContainer:
 
 ## Marks one card for removal; pressing the marked card again unmarks it.
 func _on_card_pressed(id: String) -> void:
+	Sfx.play("card_select")
 	selected_id = "" if selected_id == id else id
 	for view in views:
 		view.set_selected(view.card.id == selected_id)

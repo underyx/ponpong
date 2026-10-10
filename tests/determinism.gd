@@ -207,11 +207,24 @@ func _test_snapshot() -> void:
 	var d := MatchState.from_dict(snap, layout)
 	_check(d.to_dict() == snap, "from_dict(to_dict()) must reproduce the dict")
 	_check(d.points_to_win == 9, "points_to_win survives the snapshot")
+	# The same snapshot through JSON, as a peer or a save file would carry
+	# it: numbers come back as doubles, the seed and the RNG state as the
+	# strings to_dict() wrote them as, and the match must continue the same.
+	var parsed: Variant = JSON.parse_string(JSON.stringify(snap))
+	_check(parsed is Dictionary, "the snapshot survives JSON.stringify/parse_string")
+	var j := MatchState.from_dict(parsed, layout)
+	_check(j.rng.state == c.rng.state, "rng state after a JSON round trip: %d, expected %d" % [j.rng.state, c.rng.state])
+	_check(j.seed_value == c.seed_value, "seed after a JSON round trip")
+	_check(j.to_dict() == snap, "to_dict() after a JSON round trip must reproduce the dict")
 	var tail_c := _play(c, ai, false, {})
 	var tail_d := _play(d, ai, false, {})
+	var tail_j := _play(j, ai, false, {})
 	var same_tail := tail_c == tail_d
-	print("snapshot round trip: %d remaining events, identical=%s" % [tail_c.size(), same_tail])
+	print("snapshot round trip: %d remaining events, identical=%s, via JSON identical=%s" % [
+		tail_c.size(), same_tail, tail_c == tail_j])
 	_check(same_tail, "snapshot tails differ")
+	_check(tail_c == tail_j, "snapshot tails differ after a JSON round trip")
+	_check(c.to_dict() == j.to_dict(), "final to_dict() differs after a JSON round trip")
 
 
 # --- 4: stamina unit checks ------------------------------------------------------

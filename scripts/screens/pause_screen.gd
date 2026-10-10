@@ -42,6 +42,8 @@ func _on_abandon_pressed() -> void:
 		_armed = true
 		_abandon.text = CONFIRM_TEXT
 		_abandon.add_theme_color_override("font_color", UiKit.DANGER)
+		# Arming is not an action the Director hears, so it clicks here.
+		Sfx.play("ui_accept")
 		return
 	press("abandon")
 

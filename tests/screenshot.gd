@@ -8,6 +8,20 @@ extends SceneTree
 const SEED := 20261010
 ## Frames to let a screen lay out before saving it.
 const SETTLE := 3
+## Wall-clock seconds to let an entrance play out before saving: the hand's
+## deal-in and the reward cards' flip-in take about 0.4 s whatever the frame
+## rate, so these two are waited for by the clock, not by frames.
+const ENTRY_SETTLE := 0.6
+## Frames after the ball's bounce before 04_shot: the puff has been emitted
+## and drawn, the ring has started to spread, the trail still reaches back
+## to the paddle. 05_bounce is the frame after.
+const BOUNCE_SETTLE := 2
+## While the shot is in the air the clock is scaled so that one frame
+## advances the effects by about this much, whatever the renderer's real
+## frame time: software GL can take a third of a second per frame, longer
+## than the puff and the ring live. On a desktop this is close to no change.
+const SHOT_FRAME_TIME := 1.0 / 30.0
+const MIN_SHOT_SCALE := 0.05
 ## Where this test saves its run, so a check never touches the player's.
 const TEST_SAVE := "user://test_run.json"
 
@@ -17,8 +31,16 @@ var frames := 0
 var out_dir := OS.get_user_data_dir().path_join("shots")
 var step := 0
 var wait_until := 0
+## The step also waits for this OS tick (microseconds) to pass.
+var wait_until_usec := 0
+## Set by the ball's bounced signal once the committed shot hits the table.
+var bounced := false
 ## PNGs that could not be written; the exit code reports them.
 var failures := 0
+## Real seconds the last frame took, from the OS clock, for the shot window.
+var frame_seconds := 1.0 / 60.0
+var _last_tick := 0
+var _saved_base_scale := 1.0
 
 
 func _initialize() -> void:
@@ -29,6 +51,10 @@ func _initialize() -> void:
 
 func _process(_delta: float) -> bool:
 	frames += 1
+	var tick := Time.get_ticks_usec()
+	if _last_tick > 0:
+		frame_seconds = float(tick - _last_tick) / 1000000.0
+	_last_tick = tick
 	if frames == 1:
 		_boot()
 		return false
@@ -36,7 +62,7 @@ func _process(_delta: float) -> bool:
 		push_error("screenshot: timed out at step %d" % step)
 		quit(1)
 		return true
-	if director.transitioning or frames < wait_until:
+	if director.transitioning or frames < wait_until or tick < wait_until_usec:
 		return false
 	var m := director.match_scene
 	var name := director.screen_name
@@ -49,7 +75,7 @@ func _process(_delta: float) -> bool:
 		1:
 			if m.input_open and m.input_mode == MatchScene.InputMode.HAND:
 				_tire_one_card(m)
-				_next(SETTLE)
+				_next(SETTLE, ENTRY_SETTLE)
 		2:
 			_save("02_hand.png")
 			m._select_card(0)
@@ -67,36 +93,45 @@ func _process(_delta: float) -> bool:
 				_next(SETTLE)
 		5:
 			if name == "":
+				m.ball.bounced.connect(func(_pos: Vector3) -> void: bounced = true, CONNECT_ONE_SHOT)
+				_slow_clock()
 				m.choose_zone(m._cursor_zone())
-				_next(2)
+				_next()
 		6:
-			_save("04_shot.png")
-			_next(3)
+			if bounced:
+				_next(BOUNCE_SETTLE)
 		7:
-			_save("05_bounce.png")
+			_save("04_shot.png")
 			_next(1)
 		8:
+			_save("05_bounce.png")
+			_restore_clock()
+			_next(1)
+		9:
 			if m.input_open:
 				var stats := [m.state.players[0].stats.duplicate(), m.state.players[1].stats.duplicate()]
 				director._on_match_finished(0, [5, 3], 7, stats)
 				_next(SETTLE)
-		9:
+		10:
 			if name == "match_end":
 				_save("07_match_end.png")
 				director.screen.press("continue")
 				_next(SETTLE)
-		10:
-			if name == "reward":
-				_save("08_reward.png")
-				director.screen.press("deck")
-				_next(SETTLE)
 		11:
+			# The reward cards flip in once the screen is up: let them finish.
+			if name == "reward":
+				_next(SETTLE, ENTRY_SETTLE)
+		12:
+			_save("08_reward.png")
+			director.screen.press("deck")
+			_next(SETTLE)
+		13:
 			if name == "deck":
 				_save("09_deck.png")
 				_lose_the_run(director.run)
 				director._route()
 				_next(SETTLE)
-		12:
+		14:
 			if name == "run_end":
 				_save("10_run_end.png")
 				_remove_test_save()
@@ -117,9 +152,27 @@ func _boot() -> void:
 	root.add_child(director)
 
 
-func _next(settle := 1) -> void:
+## Moves to the next step after `settle` frames and `seconds` of wall time.
+func _next(settle := 1, seconds := 0.0) -> void:
 	step += 1
 	wait_until = frames + settle
+	wait_until_usec = Time.get_ticks_usec() + int(seconds * 1000000.0)
+
+
+## Scales the clock so a frame moves the shot's effects by SHOT_FRAME_TIME.
+## Feel's base scale follows, so a hit stop during the shot restores to the
+## same slow clock instead of the real one.
+func _slow_clock() -> void:
+	var scale := clampf(SHOT_FRAME_TIME / maxf(frame_seconds, 0.001), MIN_SHOT_SCALE, 1.0)
+	_saved_base_scale = Feel.base_time_scale
+	Feel.base_time_scale = scale
+	Engine.time_scale = scale
+	print("screenshot: frame %.3f s, shot clock at %.2f" % [frame_seconds, scale])
+
+
+func _restore_clock() -> void:
+	Feel.base_time_scale = _saved_base_scale
+	Feel.reset()
 
 
 ## Leaves the player one stamina short of the costliest card in hand, so the
@@ -151,7 +204,7 @@ func _save(name: String) -> void:
 	if err != OK:
 		failures += 1
 		push_error("screenshot: cannot write %s (%s)" % [path, error_string(err)])
-	print("saved %s (%s) err=%d" % [name, img.get_size(), err])
+	print("saved %s (%s) err=%d, frame %.3f s" % [name, img.get_size(), err, frame_seconds])
 
 
 static func _remove_test_save() -> void:
