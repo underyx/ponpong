@@ -1,14 +1,19 @@
 # ponpong
 
-A turn-based ping pong deckbuilder in stylised 3D, built with Godot 4.
+A turn-based ping pong deckbuilder in stylised 3D, built with Godot 4 and
+printed like a riso poster.
 
 There is no physics. A rally is a sequence of card plays: you pick a shot card
 against the incoming ball, aim it at one of ten zones on the opponent's half,
 and the resolver decides whether it lands, wins outright or comes back. The 3D
 scene then plays the shot back by tweening the ball along a curve, with a toon
-shader, synthesised sound, hit stop, a ball trail and particles, none of it
-from asset files. A run is six matches against a roster of nine opponents,
-with cards won between them. It plays with a mouse, a keyboard or a gamepad.
+shader, synthesised sound, hit stop, a ball trail and particles. A run is six
+matches against a roster of nine opponents, with cards won between them. It
+plays with a mouse, a keyboard or a gamepad.
+
+Everything on screen is made in this repository: two open fonts, a theme, a
+palette, SVG card art and opponent emblems written by a script, two meshes
+written by another, and shaders for the rest. See [The look](#the-look).
 
 ## Open it
 
@@ -172,6 +177,10 @@ sh tools/check_rules_pure.sh                               # rules files never t
 $G --headless --path . -s tools/card_table.gd              # the card table below, as Markdown
 LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1280x720x24" \
   $G --path . --rendering-driver opengl3 -s tests/screenshot.gd -- /abs/out   # PNGs of every screen
+LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1280x720x24" \
+  $G --path . --rendering-driver opengl3 -s tests/gallery.gd -- /abs/out      # contact sheets of the art
+python3 tools/build_art.py                                 # regenerates the SVGs after a card or roster change
+python3 tools/build_meshes.py                              # regenerates the paddle and net OBJs
 ```
 
 On Windows the same commands run in PowerShell with the console build, for
@@ -183,14 +192,16 @@ example `& 'C:\Godot\Godot_v4.7.2-stable_win64_console.exe' --headless --path . 
 opponent (with each one's target band), and per-card play, tired, land, winner
 and point-won rates; it only asserts loose bounds so it stays green while
 numbers move. `tests/screenshot.gd` needs a display, virtual or real, and
-writes one numbered PNG per screen, `01_menu.png` first.
+writes one numbered PNG per screen, `01_menu.png` first. `tests/gallery.gd`
+needs one too and writes four contact sheets: the HUD icons, the card art
+windows, the opponent emblems and every card face as `CardView` draws it.
 
 ## Where things are
 
 | Path | What it is |
 | --- | --- |
 | `scenes/main.tscn` | The root: the Director, one Match instance, the Screens layer and the Sfx node. |
-| `scenes/match.tscn` | The match: table, paddles, ball, trail, impact particles, camera, HUD, VisualFx. |
+| `scenes/match.tscn` | The match: the hall (floor, barriers, lamp), table, net, paddles, ball, trail, impact particles, camera, vignette, the hand, VisualFx. The rest of the HUD is built in `game.gd`. |
 | `scripts/director.gd` | The run loop: owns the RunState, starts matches, shows screens, pauses, saves and loads. |
 | `scripts/game.gd` | The match presenter (`MatchScene`): feeds actions to the state, plays back events, emits `fx`. |
 | `scripts/run_state.gd` | Pure, seeded, serialisable run: opponents, hearts, rewards, trims. |
@@ -208,19 +219,56 @@ writes one numbered PNG per screen, `01_menu.png` first.
 | `scripts/input_setup.gd` | Registers the keyboard, mouse and gamepad actions at boot. |
 | `scripts/settings.gd` | Master volume, fullscreen and screen shake as statics; reads and writes `user://settings.cfg` and applies them to the engine. |
 | `scripts/screens/` | Main menu, pause, settings, match end, reward, deck and run end, all code-built. |
-| `scripts/ui/` | `UiKit` (palette and widget builders), `UiScreen` (screen base), `CardView` (one card face). |
+| `scripts/ui/` | `Palette` (the colours and the four font variations), `UiKit` (widget builders: titles, plates, chips, pips, icons), `UiScreen` (screen base), `CardView` (one card face). |
+| `theme/ponpong.tres`, `theme/fonts/` | The project theme (`gui/theme/custom`): buttons, sliders, panels and the default font, built on the four `FontVariation`s. |
+| `assets/fonts/` | Lilita One (display) and Rubik (body, variable weight), with their OFL licences. |
+| `assets/icons/`, `assets/cards/`, `assets/opponents/` | White SVG glyphs for the HUD, one art window per card, one emblem per opponent. All written by `tools/build_art.py`; `icon.svg` too. |
+| `assets/meshes/` | `paddle.obj` and `net.obj`, written by `tools/build_meshes.py`. |
 | `scripts/sfx.gd` | Every sound, synthesised at boot from small recipes; listens to the match's `fx` signal. |
 | `scripts/feel.gd` | Hit stop and the base time scale. |
 | `scripts/visual_fx.gd` | Reacts to `fx`: camera, trail, particles, paddle squash, net wobble, zone flashes, score pop, pips. |
 | `scripts/camera_rig.gd` | The match camera: shake, fov punch, lean, dolly, menu orbit, end push-in. |
 | `scripts/ball_trail.gd` | The ribbon behind the ball in flight. |
 | `scripts/impact_fx.gd` | The bounce puff, the table ring and the net puff. |
-| `shaders/` | `toon` (the look), `outline` (inverted hull), `zone` (fill, risk halftone, flash), `ring` (impact ring), `floor` (grid). |
-| `materials/*.tres` | One toon material per surface, so colours tune in the inspector. |
+| `shaders/` | `toon` (banded light, halftone shadow), `outline` (inverted hull), `zone` (the table top: paper lines, risk halftone, cover hatch, cursor brackets, flash), `ring` (impact ring), `floor` (planks, lamp pool, court lines), `net` (the mesh), `vignette` (ink dots at the corners). |
+| `materials/*.tres` | One material per surface, so colours tune in the inspector. |
 | `tests/` | The headless checks above. |
 | `tools/check_rules_pure.sh` | Greps the rules files for anything that would break determinism. |
 | `tools/card_table.gd` | Prints the card table below from `CardLibrary`. |
+| `tools/build_art.py` | Writes every SVG from the card table and the roster. Rerun after changing either. |
+| `tools/build_meshes.py` | Writes the paddle and net OBJs. |
 | `export_presets.cfg` | The Windows Desktop export preset. |
+
+## The look
+
+A riso print of a club hall: two inks on paper, with the halftone showing.
+The palette lives in `scripts/ui/palette.gd` and is mirrored at the top of
+`tools/build_art.py`: ink `#1a1830`, paper `#f5eedc`, orange `#ff7a2e`,
+yellow `#ffc83d`, blue `#2f6eb8`, teal `#1fae8a`, pink `#f0486e`, violet
+`#5a3f8e`. Headings are Lilita One, body text is Rubik at three weights;
+both are OFL and checked in under `assets/fonts/`, and the project theme
+puts them on every control so nothing falls back to Godot's font.
+
+Screens are paper plates with an ink frame and a hard violet drop, headings
+with an orange second impression a little off register. The match HUD is
+the reverse: ink plates with a paper frame over the hall, so the table keeps
+the middle of the screen. A card is a portrait: ink title band, the art
+window, a paper box with its power and control meters, what it sends, its
+matchup against the incoming ball and its keyword, and badges for cost,
+rarity and copies.
+
+The art is data. `tools/build_art.py` reads the card table and draws each
+card's window from it (the card's colour, the table, the flight arc from its
+`arc_height`, the landing from `prefers_row`, the ball marked by what it
+sends, the paddle tilted by the stroke) and each opponent's emblem from a
+motif per id, so a new card or opponent gets art by rerunning the script.
+Godot imports the SVGs natively; the HUD glyphs are white and tinted at
+runtime. The paddle and the net come from `tools/build_meshes.py` as OBJ,
+one surface per material, and everything else in the hall is a Godot
+primitive wearing the toon shader. The table top is the zone grid itself:
+blue quads with paper lines, risk as halftone dots, the lanes the opponent
+covers hatched, yellow brackets under the cursor, orange where your shot is
+going and pink where theirs is coming.
 
 ## Design notes
 
@@ -310,3 +358,7 @@ Rendered by `tests/screenshot.gd` into `docs/screenshots/`.
 | ![Main menu](docs/screenshots/01_menu.png) | ![The hand](docs/screenshots/02_hand.png) |
 | ![Aiming](docs/screenshots/03_aim.png) | ![A shot](docs/screenshots/04_shot.png) |
 | ![Reward](docs/screenshots/08_reward.png) | ![Deck](docs/screenshots/09_deck.png) |
+
+Every card face, from `tests/gallery.gd`:
+
+![The cards](docs/screenshots/12_cards.png)
