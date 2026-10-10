@@ -1,10 +1,9 @@
-## One target area on the table. Each half is split 5 across by 2 deep.
+## One target area on the table. Pure data: no nodes, safe to share between
+## the match simulation and anything that draws it.
 class_name Zone
 extends RefCounted
 
-enum State { IDLE, HOVER, TARGET, INCOMING }
-
-## +1 is the opponent's half, -1 the player's half.
+## +1 is the top player's half (player 1), -1 the bottom player's (player 0).
 var side: int
 ## 0 is the short row by the net, 1 the deep row by the end line.
 var row: int
@@ -16,10 +15,6 @@ var rect: Rect2
 var risk: float
 ## Pressure bonus for landing here: the same edges that are risky also win points.
 var reward: float
-var mesh: MeshInstance3D
-var material: ShaderMaterial
-var state: State = State.IDLE
-var covered := false
 
 
 func center() -> Vector3:
@@ -39,3 +34,7 @@ func label() -> String:
 	var depth := "deep" if is_deep() else "short"
 	var lane: String = ["far-left", "left", "middle", "right", "far-right"][col]
 	return "%s %s" % [depth, lane]
+
+
+func to_dict() -> Dictionary:
+	return {"side": side, "row": row, "col": col}

@@ -29,6 +29,9 @@ end line is shallower than the short row by the net, because those are the
 balls that go out. Risky zones are drawn with halftone dots; the bigger the
 dots, the easier the zone is to miss.
 
+- Both players hold a deck of the same cards. The opponent is an AI that
+  weighs every card into every zone, so it faults into the corners sometimes
+  too.
 - Top of the screen shows the score and the **incoming ball**: its type (Flat,
   High, Spin or Fast) and which of your zones it lands in. Awkward landing
   zones cost you control on the reply. On your serve nothing has a bonus.
@@ -46,18 +49,48 @@ dots, the easier the zone is to miss.
   opponent's reply, and where it lands on your half, is your next incoming.
 - First to 7. Serve switches every two points.
 
+## How it is put together
+
+The rules and the pictures are separate on purpose, because online multiplayer
+is on the list.
+
+- `MatchState` (`scripts/match_state.gd`) is the whole game with no nodes in
+  it: two players with decks, hands, scores and lanes, whose turn it is, the
+  incoming ball, and one seeded random number generator. You drive it with
+  `start_point()` and `apply(action)`, where an action is a plain dictionary
+  like `{"type": "shot", "player": 0, "card": 2, "row": 1, "col": 3}`. Both
+  return a list of event dictionaries saying what happened.
+- Controllers decide actions. `AIController` scores every card into every zone
+  and picks one using the match's own RNG. The local player is the UI in
+  `game.gd`. A future `RemoteController` just hands over actions received from
+  the other peer.
+- `game.gd` is the presenter. It queues the events and plays them back as
+  tweens, labels and callouts. It never decides an outcome.
+- `RallyResolver` and `ZoneLayout` are pure helpers the state uses.
+
+Two copies of `MatchState` with the same seed and the same actions produce the
+same match, event for event, and `to_dict()` / `from_dict()` snapshot a match
+mid-rally. `tests/determinism.gd` checks both. So online play later means:
+agree a seed when the match starts, send each action to the other peer as it
+is made (Godot's high-level multiplayer RPCs or a tiny relay), run `apply()`
+on both ends, and let each presenter play back its own events. The opponent's
+AI is already a deck-holding player, not a reply table, so a human can take
+that seat without touching the rules.
+
 ## Where things are
 
 | Path | What it is |
 | --- | --- |
 | `scenes/main.tscn` | The whole scene: table, paddles, ball, camera, sky, UI. |
-| `scripts/game.gd` | The turn loop and state machine on the scene root. |
+| `scripts/game.gd` | The presenter on the scene root: feeds actions to the state, plays back events. |
+| `scripts/match_state.gd` | Pure, seeded, serialisable match simulation. The thing to run on both peers. |
+| `scripts/ai_controller.gd` | Picks actions for the computer player from the odds. |
 | `scripts/card.gd` | The `Card` resource: power, control, matchups, flight shape. |
-| `scripts/card_library.gd` | The starter deck. Add cards here. |
-| `scripts/zone_grid.gd` | Builds the 2x5 zones per half, their risk and reward, and draws them. |
-| `scripts/zone.gd` | One zone: side, row, lane, rect, risk, reward, highlight state. |
+| `scripts/card_library.gd` | The starter deck and card ids. Add cards here. |
+| `scripts/zone_layout.gd` | The 2x5 zones per half as data: geometry, risk and reward. |
+| `scripts/zone.gd` | One zone: side, row, lane, rect, risk, reward. |
+| `scripts/zone_grid.gd` | Draws a ZoneLayout on the table and tints zones by state. |
 | `scripts/rally_resolver.gd` | Pure logic: card + incoming ball + target zone + opponent lane into odds and an outcome. |
-| `scripts/opponent_ai.gd` | Weighted tables for how the opponent replies, where they aim, and where they stand. |
 | `scripts/ball_flight.gd` | Tweened quadratic-curve ball movement, bounce squash, net fault. |
 | `scripts/hand_ui.gd` | Builds the row of card buttons. |
 | `shaders/toon.gdshader` | The stylised look. Tweak bands, rim, halftone per material. |
@@ -69,7 +102,7 @@ dots, the easier the zone is to miss.
 ## Obvious next steps
 
 - A deck screen between matches (the Slay the Spire layer).
-- Give the opponent their own deck and stances instead of reply tables.
+- Online multiplayer: a RemoteController plus seed and action exchange, see above.
 - Energy or stamina so Smash cannot be spammed.
 - A ball trail and paddle impact particles; the shader is ready for more drama.
 
@@ -78,6 +111,7 @@ dots, the easier the zone is to miss.
 Both scripts under `tests/` run without the editor and are what CI would call:
 
 ```sh
-godot --headless --path . -s tests/autoplay.gd      # plays a full match with random cards
+godot --headless --path . -s tests/determinism.gd   # rules only: same seed + actions = same match
+godot --headless --path . -s tests/autoplay.gd      # presenter: plays a full match with random cards
 xvfb-run godot --path . --rendering-driver opengl3 -s tests/screenshot.gd -- ./shots
 ```

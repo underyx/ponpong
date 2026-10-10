@@ -2,6 +2,8 @@
 class_name Card
 extends Resource
 
+## Stable identifier used when a card is sent over the wire or saved.
+@export var id: String = "shot"
 @export var title: String = "Shot"
 @export_multiline var flavor: String = ""
 ## 0..1: how hard the shot is to return when it lands.
@@ -22,10 +24,11 @@ extends Resource
 @export var speed: float = 1.0
 
 
-static func make(p_title: String, p_flavor: String, p_power: float, p_control: float,
+static func make(p_id: String, p_title: String, p_flavor: String, p_power: float, p_control: float,
 		p_produces: int, p_strong: Array[int], p_weak: Array[int], p_color: Color,
 		p_arc: float, p_speed: float, p_prefers_row: int = -1) -> Card:
 	var c := Card.new()
+	c.id = p_id
 	c.title = p_title
 	c.flavor = p_flavor
 	c.power = p_power

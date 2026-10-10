@@ -36,10 +36,10 @@ func shot(bounce: Vector3, to: Vector3, apex: float, speed: float) -> void:
 	await fly_to(to, apex * 0.6, base * 0.8)
 
 
-## Fault: the ball thuds into the net.
-func into_net(net_point: Vector3, speed: float) -> void:
+## Fault: the ball thuds into the net and drops back on the shooter's side.
+func into_net(net_point: Vector3, speed: float, from_side: int = -1) -> void:
 	await fly_to(net_point, 0.08, 0.3 / speed)
-	var drop := net_point + Vector3(-0.08, -0.12, 0.0)
+	var drop := net_point + Vector3(0.08 * float(from_side), -0.12, 0.0)
 	await fly_to(drop, 0.02, 0.25)
 
 

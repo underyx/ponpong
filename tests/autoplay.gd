@@ -1,5 +1,6 @@
-## Headless smoke test: run the main scene and play the first card every turn
-## until the match ends. Usage: godot --headless -s tests/autoplay.gd
+## Headless smoke test of the presenter: run the main scene and, whenever the
+## local player may act, play a random card into a random zone, until the
+## match ends. Usage: godot --headless -s tests/autoplay.gd
 extends SceneTree
 
 var game: Node
@@ -21,22 +22,24 @@ func _process(_delta: float) -> bool:
 	if log_text != last_log:
 		last_log = log_text
 		print("  [%4d] %s   (%s)" % [frames, log_text, game.score_label.text])
-	if game.phase == game.Phase.PLAYER_TURN:
-		var hand_names := []
-		for c in game.hand:
-			hand_names.append(c.title)
-		var pick: int = randi() % game.hand.size()
-		print("  [%4d] incoming=%s hand=%s -> play %s" % [frames, BallType.label(game.incoming), hand_names, game.hand[pick].title])
+	if game.state.phase == MatchState.Phase.MATCH_OVER and plays > 0:
+		var score: Array = [game.state.players[0].score, game.state.players[1].score]
+		print("autoplay: match over after %d local plays, %d frames. YOU %d - %d THEM" % [plays, frames, score[0], score[1]])
+		root.remove_child(game)
+		game.free()
+		return true
+	if game.input_open:
+		var hand: Array = game.state.players[0].hand
+		var pick: int = randi() % hand.size()
+		var zones: Array = game.state.legal_targets(0)
+		var zone: Zone = zones[randi() % zones.size()]
+		var odds: Dictionary = game.state.odds(0, pick, zone)
+		print("  [%4d] incoming=%s -> %s to %s (lands %d%%)" % [
+			frames, BallType.label(game.state.incoming_type), hand[pick].title, zone.label(), roundi(odds["land"] * 100.0)])
 		game._on_card_chosen(pick)
-		var zones: Array = game.grid.zones_on(1)
-		var zone = zones[randi() % zones.size()]
-		print("         aim at %s (lands %d%%)" % [zone.label(), roundi(RallyResolver.odds(game._build_shot(game.hand[pick], zone))["land"] * 100.0)])
 		game.choose_zone(zone)
 		plays += 1
-	if game.phase == game.Phase.MATCH_OVER and plays > 0:
-		print("autoplay: match over after %d plays, %d frames. %s" % [plays, frames, game.score_label.text])
-		return true
-	if frames > 20000:
+	if frames > 30000:
 		push_error("autoplay: timed out")
 		quit(1)
 		return true

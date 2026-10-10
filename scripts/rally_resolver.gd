@@ -17,7 +17,8 @@ const ROW_PREF_BONUS := 0.15
 ## Aiming into the lane the opponent stands in, next to it, or away from it.
 const COVER_CENTER := -0.18
 const COVER_NEAR := -0.05
-const COVER_OPEN := 0.15
+const COVER_OPEN := 0.12
+const EDGE_PAYOFF := 1.5
 
 
 ## Everything that goes into one shot, before the dice.
@@ -39,7 +40,9 @@ class Shot:
 		return q
 
 	func pressure() -> float:
-		var p := card.power + target.reward
+		# Edge and deep zones pay off in proportion to the shot's own power, so a
+		# soft block into the corner is safe but not a winner.
+		var p := card.power + target.reward * card.power * EDGE_PAYOFF
 		if card.is_strong_vs(incoming_type):
 			p += 0.15
 		if card.likes_row(target.row):
