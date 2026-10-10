@@ -1,8 +1,9 @@
-## The settings: master volume, fullscreen and screen shake, over a dimmed
-## backdrop. Every change lands in the Settings statics and is applied at
-## once, so the slider is heard and fullscreen is seen while the screen is
-## still up; the Director writes the file when Back is pressed. Opened from
-## the main menu or from Pause, and Back returns to whichever it was.
+## The settings: master volume, fullscreen and screen shake, on a paper
+## plate over a dimmed backdrop. Every change lands in the Settings statics
+## and is applied at once, so the slider is heard and fullscreen is seen
+## while the screen is still up; the Director writes the file when Back is
+## pressed. Opened from the main menu or from Pause, and Back returns to
+## whichever it was.
 ##
 ## args: {"return": "main_menu"|"pause"}
 ## actions: back. ui_cancel (Esc, B) presses back.
@@ -10,25 +11,21 @@ class_name SettingsScreen
 extends UiScreen
 
 const TITLE_SIZE := 56
-const ROW_SIZE := 22
+const ROW_SIZE := 20
 const SLIDER_WIDTH := 300
 const SLIDER_STEP := 0.05
 ## Width of the setting names column, so the controls line up.
-const NAME_WIDTH := 220
+const NAME_WIDTH := 200
 ## Space between the slider and the ring drawn around it when it has focus.
 const SLIDER_PAD := 6
 const PERCENT_WIDTH := 64
-const BACK_SIZE := Vector2(230, 48)
-## Track and fill of the volume slider.
-const TRACK_HEIGHT := 8
-const TRACK_COLOR := UiKit.BUTTON_BG
-const TRACK_BORDER := UiKit.BUTTON_BORDER
-const FILL_COLOR := UiKit.GOLD
+const BACK_SIZE := Vector2(230, 52)
 ## The On/Off pill the toggles wear: the theme's own check icons are near
-## invisible on the dark panel, so Off read as a bare dot.
-const PILL_SIZE := Vector2i(44, 22)
+## invisible on paper, so Off read as a bare dot.
+const PILL_SIZE := Vector2i(48, 26)
 ## Gap between the track's edge and the knob.
-const PILL_KNOB_PAD := 3.0
+const PILL_KNOB_PAD := 4.0
+const PILL_RIM := 2.0
 
 var slider: HSlider
 var percent_label: Label
@@ -46,15 +43,16 @@ var _frame_focus: StyleBoxFlat
 func setup(p_args: Dictionary) -> void:
 	super(p_args)
 	back_action = "back"
-	add_child(UiKit.dim(0.55))
-	var box := UiKit.vbox(14)
-	box.add_child(UiKit.title("SETTINGS", TITLE_SIZE))
-	box.add_child(_spacer(4))
+	add_child(UiKit.dim(0.5))
+	var box := UiKit.vbox(12)
+	box.add_child(UiKit.heading("SETTINGS", TITLE_SIZE))
+	box.add_child(UiKit.rule())
+	box.add_child(UiKit.spacer(6))
 	var grid := GridContainer.new()
 	grid.name = "Rows"
 	grid.columns = 2
 	grid.add_theme_constant_override("h_separation", 18)
-	grid.add_theme_constant_override("v_separation", 16)
+	grid.add_theme_constant_override("v_separation", 18)
 	grid.add_child(_name("Master volume"))
 	grid.add_child(_volume_row())
 	grid.add_child(_name("Fullscreen"))
@@ -64,7 +62,9 @@ func setup(p_args: Dictionary) -> void:
 	shake_button = _toggle("ScreenShake", Settings.screen_shake, _on_shake_toggled)
 	grid.add_child(shake_button)
 	box.add_child(grid)
-	box.add_child(_spacer(8))
+	box.add_child(UiKit.spacer(4))
+	box.add_child(UiKit.caption("F11 flips fullscreen anywhere. Changes apply at once and Back saves them.", 13))
+	box.add_child(UiKit.spacer(6))
 	back_button = UiKit.button("Back", 20, BACK_SIZE)
 	back_button.size_flags_horizontal = SIZE_SHRINK_CENTER
 	_bind(back_button, "back")
@@ -93,7 +93,7 @@ func refresh() -> void:
 # --- rows ------------------------------------------------------------------------
 
 func _name(text: String) -> Label:
-	var l := UiKit.label(text, ROW_SIZE)
+	var l := UiKit.strong(text, ROW_SIZE)
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	l.custom_minimum_size = Vector2(NAME_WIDTH, 0)
 	l.size_flags_vertical = SIZE_SHRINK_CENTER
@@ -112,15 +112,16 @@ func _volume_row() -> HBoxContainer:
 	slider.custom_minimum_size = Vector2(SLIDER_WIDTH, 0)
 	slider.size_flags_vertical = SIZE_SHRINK_CENTER
 	slider.focus_mode = FOCUS_ALL
-	slider.add_theme_stylebox_override("slider", _track_style(TRACK_COLOR, TRACK_BORDER))
-	slider.add_theme_stylebox_override("grabber_area", _track_style(FILL_COLOR, FILL_COLOR))
-	slider.add_theme_stylebox_override("grabber_area_highlight", _track_style(FILL_COLOR.lightened(0.2), FILL_COLOR))
+	var knob := _knob()
+	slider.add_theme_icon_override("grabber", knob)
+	slider.add_theme_icon_override("grabber_highlight", knob)
+	slider.add_theme_icon_override("grabber_disabled", knob)
 	slider.value_changed.connect(_on_volume_changed)
 	slider.focus_entered.connect(_set_frame.bind(true))
 	slider.focus_exited.connect(_set_frame.bind(false))
 	_frame_rest = StyleBoxEmpty.new()
 	_frame_rest.set_content_margin_all(SLIDER_PAD)
-	_frame_focus = UiKit.focus_style()
+	_frame_focus = UiKit.focus_style(10, 0.0)
 	_frame_focus.set_content_margin_all(SLIDER_PAD)
 	_slider_frame = PanelContainer.new()
 	_slider_frame.name = "VolumeFrame"
@@ -128,7 +129,7 @@ func _volume_row() -> HBoxContainer:
 	_slider_frame.add_theme_stylebox_override("panel", _frame_rest)
 	_slider_frame.add_child(slider)
 	row.add_child(_slider_frame)
-	percent_label = UiKit.label(Settings.percent(Settings.master_volume), ROW_SIZE, UiKit.GOLD)
+	percent_label = UiKit.display(Settings.percent(Settings.master_volume), ROW_SIZE, Palette.ORANGE)
 	percent_label.name = "Percent"
 	percent_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	percent_label.custom_minimum_size = Vector2(PERCENT_WIDTH, 0)
@@ -137,8 +138,8 @@ func _volume_row() -> HBoxContainer:
 	return row
 
 
-## A CheckButton reading On or Off, with the gold focus ring every other
-## control wears.
+## A CheckButton reading On or Off, in the theme's print style, with the
+## orange focus ring every other control wears.
 func _toggle(p_name: String, on: bool, handler: Callable) -> CheckButton:
 	var b := CheckButton.new()
 	b.name = p_name
@@ -146,21 +147,6 @@ func _toggle(p_name: String, on: bool, handler: Callable) -> CheckButton:
 	b.text = _on_off(on)
 	b.focus_mode = FOCUS_ALL
 	b.size_flags_horizontal = SIZE_SHRINK_BEGIN
-	b.add_theme_font_size_override("font_size", ROW_SIZE)
-	b.add_theme_color_override("font_color", UiKit.TEXT)
-	b.add_theme_color_override("font_focus_color", UiKit.TEXT)
-	b.add_theme_color_override("font_hover_color", UiKit.GOLD)
-	b.add_theme_color_override("font_pressed_color", UiKit.TEXT)
-	b.add_theme_color_override("font_hover_pressed_color", UiKit.GOLD)
-	b.add_theme_color_override("font_outline_color", UiKit.OUTLINE)
-	b.add_theme_constant_override("outline_size", 4)
-	var focus := UiKit.focus_style()
-	focus.set_content_margin_all(6)
-	b.add_theme_stylebox_override("focus", focus)
-	for state in ["normal", "hover", "pressed", "hover_pressed", "disabled"]:
-		var s := StyleBoxEmpty.new()
-		s.set_content_margin_all(6)
-		b.add_theme_stylebox_override(state, s)
 	var on_icon := _pill(true)
 	var off_icon := _pill(false)
 	b.add_theme_icon_override("checked", on_icon)
@@ -171,49 +157,45 @@ func _toggle(p_name: String, on: bool, handler: Callable) -> CheckButton:
 	return b
 
 
-## A rounded track with a knob: gold with a dark knob at the right for On, a
-## muted track with a light knob at the left for Off. Drawn pixel by pixel
-## into an ImageTexture, so there is no asset to load.
+## A rounded track with an ink rim and a knob: orange with a paper knob at
+## the right for On, a dim track with an ink knob at the left for Off. Drawn
+## pixel by pixel into an ImageTexture, so there is no asset to load.
 static func _pill(on: bool) -> ImageTexture:
 	var img := Image.create_empty(PILL_SIZE.x, PILL_SIZE.y, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
 	var r := PILL_SIZE.y * 0.5
-	var track := UiKit.GOLD if on else UiKit.MUTED.darkened(0.35)
-	var knob := UiKit.OUTLINE if on else UiKit.TEXT
+	var track := Palette.ORANGE if on else Palette.PAPER_DIM
+	var knob := Palette.PAPER if on else Palette.INK
 	var knob_x := PILL_SIZE.x - r if on else r
 	for y in PILL_SIZE.y:
 		for x in PILL_SIZE.x:
 			var p := Vector2(x + 0.5, y + 0.5)
 			# The track is a stadium: a point is inside when it is within r of
-			# the centre line between the two end caps.
-			if p.distance_to(Vector2(clampf(p.x, r, PILL_SIZE.x - r), r)) <= r:
-				img.set_pixel(x, y, track)
+			# the centre line between the two end caps; the rim is its edge.
+			var d := p.distance_to(Vector2(clampf(p.x, r, PILL_SIZE.x - r), r))
+			if d <= r:
+				img.set_pixel(x, y, Palette.INK if d > r - PILL_RIM else track)
 			if p.distance_to(Vector2(knob_x, r)) <= r - PILL_KNOB_PAD:
 				img.set_pixel(x, y, knob)
 	return ImageTexture.create_from_image(img)
 
 
-static func _track_style(bg: Color, border: Color) -> StyleBoxFlat:
-	var s := StyleBoxFlat.new()
-	s.bg_color = bg
-	s.border_color = border
-	s.set_border_width_all(1)
-	@warning_ignore("integer_division")
-	s.set_corner_radius_all(TRACK_HEIGHT / 2)
-	s.content_margin_top = TRACK_HEIGHT * 0.5
-	s.content_margin_bottom = TRACK_HEIGHT * 0.5
-	return s
+## The slider's knob: a paper disc with an ink rim.
+static func _knob() -> ImageTexture:
+	var size := 22
+	var img := Image.create_empty(size, size, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var c := Vector2(size * 0.5, size * 0.5)
+	for y in size:
+		for x in size:
+			var d := Vector2(x + 0.5, y + 0.5).distance_to(c)
+			if d <= size * 0.5:
+				img.set_pixel(x, y, Palette.INK if d > size * 0.5 - 3.0 else Palette.PAPER_BRIGHT)
+	return ImageTexture.create_from_image(img)
 
 
 static func _on_off(on: bool) -> String:
 	return "On" if on else "Off"
-
-
-static func _spacer(height: int) -> Control:
-	var c := Control.new()
-	c.custom_minimum_size = Vector2(0, height)
-	c.mouse_filter = MOUSE_FILTER_IGNORE
-	return c
 
 
 # --- changes -------------------------------------------------------------------------

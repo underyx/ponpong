@@ -13,17 +13,17 @@ extends UiScreen
 const COLUMNS := 5
 const GRID_SEPARATION := 14
 ## Rows shown at once; a longer deck scrolls.
-const VISIBLE_ROWS := 3
+const VISIBLE_ROWS := 2
 ## Room kept beside the grid for the vertical scrollbar.
 const SCROLLBAR_WIDTH := 16
 ## Space around the grid inside the scroll area, for the cards' focus rings
 ## and the lift of a hovered or focused card on the top row.
-const GRID_PADDING := 16
+const GRID_PADDING := 22
 const HEADERS := {
 	"regroup": "Regroup: remove one card before the rematch",
 	"trim": "Trim: remove one card, or keep them all",
 }
-const REMOVE_SIZE := Vector2(230, 48)
+const REMOVE_SIZE := Vector2(230, 52)
 
 var mode := "view"
 var deck: Array[String] = []
@@ -47,16 +47,18 @@ func setup(p_args: Dictionary) -> void:
 	deck.assign(args.get("deck", []))
 	deck_min = int(args.get("deck_min", RunState.DECK_MIN))
 	back_action = "back" if mode == "view" else ""
-	add_child(UiKit.dim(0.55))
-	var box := UiKit.vbox(10)
+	add_child(UiKit.dim(0.6))
+	var box := UiKit.vbox(6)
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
 	header = UiKit.title(_header_text(), 40)
 	box.add_child(header)
-	curve_label = UiKit.label(cost_curve(deck), 18, UiKit.MUTED)
+	curve_label = UiKit.label(cost_curve(deck), 15, Palette.PAPER_DIM)
 	box.add_child(curve_label)
 	if mode == "remove" and deck.size() <= deck_min:
-		box.add_child(UiKit.label("Your deck is at its minimum of %d cards: nothing can be removed." % deck_min,
-			16, UiKit.DANGER))
+		var warning := UiKit.chip("Your deck is at its minimum of %d cards: nothing can be removed." % deck_min,
+			null, Palette.PINK, Palette.PAPER, 13)
+		warning.size_flags_horizontal = SIZE_SHRINK_CENTER
+		box.add_child(warning)
 	grid = GridContainer.new()
 	grid.name = "Grid"
 	grid.columns = COLUMNS

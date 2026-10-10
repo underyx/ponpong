@@ -4,19 +4,18 @@
 class_name RunEndScreen
 extends UiScreen
 
-const TITLE_SIZE := 72
-const SUB_SIZE := 24
-const STAT_SIZE := 20
-const SEED_SIZE := 18
+const TITLE_SIZE := 80
+const SUB_SIZE := 22
+const STAT_SIZE := 18
+const SEED_SIZE := 16
 ## Confetti: this many flakes alive at once, each falling for this long.
-const CONFETTI_AMOUNT := 80
+const CONFETTI_AMOUNT := 90
 const CONFETTI_LIFETIME := 2.5
 ## Each flake is a 4x4 white square drawn at this scale, in these colours.
 const CONFETTI_TEXTURE_SIZE := 4
 const CONFETTI_SCALE_MIN := 1.5
 const CONFETTI_SCALE_MAX := 3.0
-const CONFETTI_COLORS := [UiKit.GOLD, UiKit.DANGER, Color(0.45, 0.70, 0.95), Color(0.60, 0.85, 0.60),
-	Color(0.85, 0.65, 0.95), UiKit.TEXT]
+const CONFETTI_COLORS := [Palette.YELLOW, Palette.PINK, Palette.BLUE_LIGHT, Palette.TEAL, Palette.ORANGE, Palette.PAPER]
 const CONFETTI_GRAVITY := Vector2(0.0, 240.0)
 const CONFETTI_SPEED_MIN := 40.0
 const CONFETTI_SPEED_MAX := 140.0
@@ -30,26 +29,37 @@ var _new_run: Button
 func setup(p_args: Dictionary) -> void:
 	super(p_args)
 	back_action = ""
-	add_child(UiKit.dim(0.70))
+	add_child(UiKit.dim(0.65))
 	var won := bool(args.get("won", false))
 	var stats: Dictionary = args.get("stats", {})
-	var box := UiKit.vbox(8)
-	var heading := UiKit.title("CHAMPION" if won else "RUN OVER", TITLE_SIZE)
-	heading.add_theme_color_override("font_color", UiKit.GOLD if won else UiKit.DANGER)
-	box.add_child(heading)
-	if not won:
-		box.add_child(UiKit.label("at stage %d vs %s" % [int(args.get("stage", 0)) + 1, String(args.get("opponent_name", "?"))],
+	var box := UiKit.vbox(6)
+	box.add_child(UiKit.heading("CHAMPION" if won else "RUN OVER", TITLE_SIZE, Palette.TEAL if won else Palette.PINK))
+	box.add_child(UiKit.rule())
+	if won:
+		box.add_child(UiKit.text("Six opponents, one deck, no hearts spared", SUB_SIZE))
+	else:
+		box.add_child(UiKit.text("at stage %d vs %s" % [int(args.get("stage", 0)) + 1, String(args.get("opponent_name", "?"))],
 			SUB_SIZE))
-	box.add_child(_spacer(6))
-	box.add_child(_stat("Opponents beaten   %d / %d" % [int(stats.get("matches_won", 0)), RunState.STAGES]))
-	box.add_child(_stat("Points   %d won  ·  %d lost" % [int(stats.get("points_won", 0)), int(stats.get("points_lost", 0))]))
-	box.add_child(_stat("Longest rally   %d" % int(stats.get("longest_rally", 0))))
-	box.add_child(_stat("Cards   %d added  ·  %d removed  ·  %d in the deck" % [
-		int(stats.get("cards_added", 0)), int(stats.get("cards_removed", 0)), int(args.get("deck_size", 0))]))
-	box.add_child(_stat("Tired plays   %d" % int(stats.get("tired_plays", 0))))
-	box.add_child(_spacer(4))
-	box.add_child(UiKit.label("Seed %d" % int(args.get("seed", 0)), SEED_SIZE, UiKit.GOLD))
-	box.add_child(_spacer(6))
+	box.add_child(UiKit.spacer(4))
+	var inset := UiKit.inset(Vector2(18, 8))
+	inset.name = "Stats"
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 28)
+	grid.add_theme_constant_override("v_separation", 2)
+	_row(grid, "Opponents beaten", "%d / %d" % [int(stats.get("matches_won", 0)), RunState.STAGES])
+	_row(grid, "Points", "%d won  ·  %d lost" % [int(stats.get("points_won", 0)), int(stats.get("points_lost", 0))])
+	_row(grid, "Longest rally", str(int(stats.get("longest_rally", 0))))
+	_row(grid, "Cards", "%d added  ·  %d removed  ·  %d in the deck" % [
+		int(stats.get("cards_added", 0)), int(stats.get("cards_removed", 0)), int(args.get("deck_size", 0))])
+	_row(grid, "Tired plays", str(int(stats.get("tired_plays", 0))))
+	inset.add_child(grid)
+	box.add_child(inset)
+	box.add_child(UiKit.spacer(2))
+	var seed_chip := UiKit.chip("Seed %d" % int(args.get("seed", 0)), null, Palette.INK, Palette.YELLOW, SEED_SIZE)
+	seed_chip.size_flags_horizontal = SIZE_SHRINK_CENTER
+	box.add_child(seed_chip)
+	box.add_child(UiKit.spacer(8))
 	var row := UiKit.hbox(14)
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	_new_run = _menu_button(row, "New Run", "new_run")
@@ -105,18 +115,17 @@ static func _confetti() -> CPUParticles2D:
 
 
 func _menu_button(row: BoxContainer, text: String, action: String) -> Button:
-	var b := UiKit.button(text, 20, Vector2(220, 48))
+	var b := UiKit.button(text, 20, Vector2(220, 52))
 	_bind(b, action)
 	row.add_child(b)
 	return b
 
 
-static func _stat(text: String) -> Label:
-	return UiKit.label(text, STAT_SIZE, UiKit.MUTED)
-
-
-static func _spacer(height: int) -> Control:
-	var c := Control.new()
-	c.custom_minimum_size = Vector2(0, height)
-	c.mouse_filter = MOUSE_FILTER_IGNORE
-	return c
+static func _row(grid: GridContainer, name_text: String, value: String) -> void:
+	var n := UiKit.text(name_text, STAT_SIZE, Palette.INK_DIM)
+	n.add_theme_font_override("font", Palette.body_medium)
+	n.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	grid.add_child(n)
+	var v := UiKit.strong(value, STAT_SIZE)
+	v.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	grid.add_child(v)

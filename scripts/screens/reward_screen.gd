@@ -1,10 +1,10 @@
 ## After a won match: pick one of three cards, skip, or (after some stages)
-## remove a card instead. The panel underneath scouts the next opponent, so the
-## pick is made knowing who it is for.
+## remove a card instead. The report underneath scouts the next opponent,
+## emblem and all, so the pick is made knowing who it is for.
 ##
 ## args: {"offer": [ids], "trim_available": bool, "deck_size": int, "deck_max": int,
 ##        "hearts": int, "stage": int (0-based, the stage just won), "stages": int,
-##        "next": {"name", "blurb", "points_to_win", "deck_summary", "boss"}}
+##        "next": {"id", "name", "blurb", "points_to_win", "deck_summary", "boss"}}
 ## actions: pick {index}, skip, trim, deck. No back action: a choice is required.
 ##
 ## The three cards flip in one after another. Once the Director has taken a
@@ -13,12 +13,15 @@
 class_name RewardScreen
 extends UiScreen
 
-const HEADER := "Victory. Pick a card"
+const HEADER := "VICTORY"
+const SUBHEADER := "Pick a card for the road, or skip it"
+const FULL_SUBHEADER := "Your deck is full: skip, or make room"
 const CARD_SEPARATION := 18
-const SKIP_SIZE := Vector2(150, 52)
+const SKIP_SIZE := Vector2(150, 56)
 const ACTION_SIZE := Vector2(230, 48)
-## The scouting panel never grows past the card row.
-const PANEL_WIDTH := 740
+## The scouting report never grows past the card row.
+const PANEL_WIDTH := 760
+const EMBLEM_SIZE := 72
 ## What the cards that were not taken fade to.
 const UNPICKED_ALPHA := 0.3
 
@@ -34,10 +37,13 @@ func setup(p_args: Dictionary) -> void:
 	var offer: Array = args.get("offer", [])
 	var deck_size := int(args.get("deck_size", 0))
 	var deck_full := deck_size >= int(args.get("deck_max", RunState.DECK_MAX))
-	add_child(UiKit.dim(0.55))
-	var box := UiKit.vbox(12)
+	add_child(UiKit.dim(0.5))
+	var box := UiKit.vbox(10)
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
-	box.add_child(UiKit.title(HEADER if not deck_full else "Victory. Your deck is full", 44))
+	var head := UiKit.vbox(0)
+	head.add_child(UiKit.title(HEADER, 56))
+	head.add_child(UiKit.label(FULL_SUBHEADER if deck_full else SUBHEADER, 18, Palette.PAPER))
+	box.add_child(head)
 
 	var row := UiKit.hbox(CARD_SEPARATION)
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -62,10 +68,10 @@ func setup(p_args: Dictionary) -> void:
 	var actions := UiKit.hbox(14)
 	actions.alignment = BoxContainer.ALIGNMENT_CENTER
 	if bool(args.get("trim_available", false)):
-		trim_button = UiKit.button("Remove a card instead", 20, ACTION_SIZE)
+		trim_button = UiKit.button("Remove a card instead", 18, ACTION_SIZE)
 		_bind(trim_button, "trim")
 		actions.add_child(trim_button)
-	deck_button = UiKit.button("View deck", 20, ACTION_SIZE)
+	deck_button = UiKit.button("View deck", 18, ACTION_SIZE)
 	_bind(deck_button, "deck")
 	actions.add_child(deck_button)
 	box.add_child(actions)
@@ -76,7 +82,7 @@ func setup(p_args: Dictionary) -> void:
 
 	footer = UiKit.label("Deck: %d cards, hearts %d, stage %d of %d" % [
 		deck_size, int(args.get("hearts", 0)), int(args.get("stage", 0)) + 1,
-		int(args.get("stages", RunState.STAGES))], 18, UiKit.MUTED)
+		int(args.get("stages", RunState.STAGES))], 15, Palette.PAPER_DIM)
 	box.add_child(footer)
 	add_child(UiKit.center(box))
 
@@ -100,27 +106,41 @@ func on_accepted(action: String, data: Dictionary) -> void:
 			views[i].fade_to(UNPICKED_ALPHA)
 
 
-## "Next: Jax Dunn (first to 7)", the blurb and the deck summary, with a BOSS
-## tag for the last stage.
+## The scouting report: the emblem, "Next: Jax Dunn (first to 7)", the blurb
+## and the deck summary, with a BOSS tag for the last stage.
 func _next_panel(next: Dictionary) -> PanelContainer:
 	var panel := UiKit.panel()
 	panel.name = "NextOpponent"
+	panel.add_theme_stylebox_override("panel", UiKit.panel_style(Palette.PAPER, 16.0))
 	panel.custom_minimum_size = Vector2(PANEL_WIDTH, 0)
-	var v := UiKit.vbox(6)
-	var heading := UiKit.hbox(12)
-	heading.alignment = BoxContainer.ALIGNMENT_CENTER
-	heading.add_child(UiKit.label("Next: %s (first to %d)" % [
-		String(next.get("name", "?")), int(next.get("points_to_win", 0))], 26, UiKit.GOLD))
+	var row := UiKit.hbox(16)
+	var emblem := UiKit.emblem(String(next.get("id", "")), EMBLEM_SIZE)
+	emblem.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(emblem)
+	var v := UiKit.vbox(2)
+	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var heading := UiKit.hbox(10)
+	heading.alignment = BoxContainer.ALIGNMENT_BEGIN
+	var scouting := UiKit.caption("SCOUTING REPORT", 11, Palette.ORANGE)
+	scouting.add_theme_font_override("font", Palette.body_bold)
+	heading.add_child(scouting)
 	if bool(next.get("boss", false)):
-		var tag := UiKit.label("BOSS", 22, UiKit.DANGER)
+		var tag := UiKit.chip("BOSS", null, Palette.PINK, Palette.PAPER, 11)
 		tag.name = "BossTag"
 		heading.add_child(tag)
 	v.add_child(heading)
-	var blurb := UiKit.label(String(next.get("blurb", "")), 18, UiKit.TEXT)
+	var name_line := UiKit.heading("Next: %s (first to %d)" % [
+		String(next.get("name", "?")), int(next.get("points_to_win", 0))], 24)
+	name_line.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	v.add_child(name_line)
+	var blurb := UiKit.text(String(next.get("blurb", "")), 16)
+	blurb.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	blurb.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(blurb)
-	var summary := UiKit.label("Deck: " + String(next.get("deck_summary", "")), 16, UiKit.MUTED)
+	var summary := UiKit.caption("Deck: " + String(next.get("deck_summary", "")), 13)
+	summary.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(summary)
-	panel.add_child(v)
+	row.add_child(v)
+	panel.add_child(row)
 	return panel

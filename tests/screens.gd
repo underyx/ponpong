@@ -190,7 +190,7 @@ func _test_card_view() -> void:
 				filled += 1
 				_check(view.card == card, "CardView %s: card not kept" % id)
 				_check(view.tired == (card.cost > stamina), "CardView %s: tired %s at stamina %d" % [id, view.tired, stamina])
-				_check(view.tooltip_text == card.flavor, "CardView %s: tooltip is not the flavor" % id)
+				_check(card.flavor in view.tooltip_text, "CardView %s: tooltip does not carry the flavor" % id)
 				_check(view.copies == 1, "CardView %s: copies %d in hand mode" % [id, view.copies])
 				var face := _labels_text(view)
 				_check(card.title in face, "CardView %s: title missing from the face" % id)

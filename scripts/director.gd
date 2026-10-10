@@ -9,7 +9,7 @@ extends Node
 signal screen_changed(name: String)
 signal device_changed(gamepad: bool)
 
-const VERSION := "0.1.0"
+const VERSION := "0.2.0"
 ## Where a run is saved by default; see `save_path`.
 const SAVE_PATH := "user://run.json"
 ## Fade through black between screens; both are 0 headlessly so tests
@@ -137,6 +137,7 @@ func start_match() -> void:
 		"decks": [CardLibrary.from_ids(cfg["player_deck"]), CardLibrary.from_ids(cfg["opponent_deck"])],
 		"points_to_win": cfg["points_to_win"],
 		"ai": opponent["ai"],
+		"opponent_id": opponent["id"],
 		"opponent_name": opponent["name"],
 		"blurb": opponent["blurb"],
 		"paddle_color": opponent["paddle_color"],
@@ -421,6 +422,7 @@ func _reward_args() -> Dictionary:
 		"stage": run.stage,
 		"stages": RunState.STAGES,
 		"next": {
+			"id": next_id,
 			"name": profile["name"],
 			"blurb": profile["blurb"],
 			"points_to_win": int(RunState.POINTS_TO_WIN[next_stage]),
